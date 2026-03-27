@@ -10,21 +10,43 @@ interface Props {
 }
 
 const IdentityForm: React.FC<Props> = ({ profile, updateProfile, readOnly, validationErrors = {} as Record<string, string> }) => {
+  const fullName = (profile.fullName || '').trim();
+  const nameParts = fullName ? fullName.split(/\s+/) : [];
+  const firstName = nameParts[0] || '';
+  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+
+  const updateName = (nextFirst: string, nextLast: string) => {
+    updateProfile({ fullName: `${nextFirst} ${nextLast}`.trim() });
+  };
+
   return (
     <div className={`space-y-6 animate-in fade-in duration-500 ${readOnly ? 'opacity-60 pointer-events-none' : ''}`}>
       <div className="space-y-6 transition-all duration-300">
-        <div>
-          <label className="block text-sm font-bold text-[#2c4869] mb-2 tracking-tight">Full name <span className="text-red-500 ml-1">*</span></label>
-          <input 
-            type="text" 
-            value={profile.fullName}
-            onChange={(e) => updateProfile({ fullName: e.target.value })}
-            placeholder="e.g. Ananya Iyer"
-            disabled={readOnly}
-            className={`w-full px-4 py-3 rounded-xl border ${validationErrors.fullName ? 'border-red-500 ring-2 ring-red-100' : 'border-slate-200 focus:ring-2 focus:ring-[#f58434]'} focus:border-transparent outline-none transition-all disabled:bg-slate-50 font-medium`}
-          />
-          {validationErrors.fullName && <p className="text-red-500 text-xs mt-1">{validationErrors.fullName}</p>}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-bold text-[#2c4869] mb-2 tracking-tight">First Name <span className="text-red-500 ml-1">*</span></label>
+            <input
+              type="text"
+              value={firstName}
+              onChange={(e) => updateName(e.target.value, lastName)}
+              placeholder="e.g. Ananya"
+              disabled={readOnly}
+              className={`w-full px-4 py-3 rounded-xl border ${validationErrors.fullName ? 'border-red-500 ring-2 ring-red-100' : 'border-slate-200 focus:ring-2 focus:ring-[#f58434]'} focus:border-transparent outline-none transition-all disabled:bg-slate-50 font-medium`}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-[#2c4869] mb-2 tracking-tight">Last Name <span className="text-red-500 ml-1">*</span></label>
+            <input
+              type="text"
+              value={lastName}
+              onChange={(e) => updateName(firstName, e.target.value)}
+              placeholder="e.g. Iyer"
+              disabled={readOnly}
+              className={`w-full px-4 py-3 rounded-xl border ${validationErrors.fullName ? 'border-red-500 ring-2 ring-red-100' : 'border-slate-200 focus:ring-2 focus:ring-[#f58434]'} focus:border-transparent outline-none transition-all disabled:bg-slate-50 font-medium`}
+            />
+          </div>
         </div>
+        {validationErrors.fullName && <p className="-mt-4 text-red-500 text-xs">{validationErrors.fullName}</p>}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {(!readOnly || profile.gender) && (
@@ -44,19 +66,6 @@ const IdentityForm: React.FC<Props> = ({ profile, updateProfile, readOnly, valid
                 <option value="Prefer not to say">Prefer not to say</option>
                 <option value="Other">Other</option>
               </select>
-            </div>
-          )}
-          {(!readOnly || profile.pronouns) && (
-            <div>
-              <label className="block text-sm font-bold text-[#2c4869] mb-2 tracking-tight">Preferred Pronouns</label>
-              <input 
-                type="text" 
-                value={profile.pronouns}
-                onChange={(e) => updateProfile({ pronouns: e.target.value })}
-                placeholder="e.g. she/her, they/them"
-                disabled={readOnly}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#f58434] focus:border-transparent outline-none transition-all disabled:bg-slate-50 font-medium"
-              />
             </div>
           )}
         </div>

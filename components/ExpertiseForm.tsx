@@ -103,7 +103,7 @@ const SkillSection = ({ title, description, examples, value, onChange, onAdd, pl
       </div>
       <div className="mb-4">
         <p className="text-xs font-bold text-[#2c4869] mb-1">{description}</p>
-        <p className="text-[10px] text-slate-400 italic">Examples: {examples}</p>
+        {examples ? <p className="text-[10px] text-slate-400 italic">Examples: {examples}</p> : null}
         {errorMessage && <p className="text-red-500 text-[10px] font-bold mt-1">{errorMessage}</p>}
       </div>
       <InputRow value={value} onChange={onChange} onAdd={onAdd} placeholder={placeholder} disabled={readOnly} />
@@ -148,8 +148,7 @@ const ExpertiseForm: React.FC<Props> = ({ profile, updateProfile, readOnly, vali
         {/* 1. Subject Knowledge */}
         <SkillSection 
           title="1. Subject Knowledge"
-          description="What scientific or engineering concepts are you becoming comfortable with? (Include everything from basic lab techniques to advanced analysis)."
-          examples="Circuit Design, Thermodynamics Analysis, Molecular Biology Techniques, Structural Analysis, Control Systems, Embedded Systems, Materials Characterization, Signal Processing, etc."
+          description="What concepts or techniques are you learning?"
           value={inputs.subject}
           onChange={(v: string) => setInputs(p => ({ ...p, subject: v }))}
           onAdd={() => addToList('subjectSkills', inputs.subject, 'subject')}
@@ -166,7 +165,7 @@ const ExpertiseForm: React.FC<Props> = ({ profile, updateProfile, readOnly, vali
         {/* 2. Technical Tools & IT Skills */}
         <SkillSection 
           title="2. Technical Tools & IT Skills"
-          description="What software, programming languages, or technical tools have you worked with?"
+          description="What tools, software, or programming languages have you used?"
           examples="Python, MATLAB, SolidWorks, AutoCAD, Arduino, Git / GitHub, Linux, Excel / Advanced Spreadsheets, Cloud Platforms (AWS, GCP)"
           value={inputs.tool}
           onChange={(v: string) => setInputs(p => ({ ...p, tool: v }))}
@@ -184,7 +183,7 @@ const ExpertiseForm: React.FC<Props> = ({ profile, updateProfile, readOnly, vali
         {/* 3. AI & Data Skills */}
         <SkillSection 
           title="3. AI & Data Skills"
-          description="Have you explored artificial intelligence, machine learning, or data-related tools and methods?"
+          description="Have you explored AI, machine learning, or data tools?"
           examples="Machine Learning, Deep Learning, Prompt Engineering, Data Analysis, Computer Vision, Natural Language Processing, TensorFlow / PyTorch, Data Visualization"
           value={inputs.ai}
           onChange={(v: string) => setInputs(p => ({ ...p, ai: v }))}
@@ -202,8 +201,8 @@ const ExpertiseForm: React.FC<Props> = ({ profile, updateProfile, readOnly, vali
         {/* 4. Professional & Transferable Skills */}
         <SkillSection 
           title="4. Professional & Transferable Skills"
-          description="These are skills that help you collaborate, communicate ideas, and work effectively in teams."
-          examples="Scientific Communication, Team Collaboration, Project Management, Leadership, Problem Solving, Critical Thinking, Time Management, Public Speaking"
+          description="What skills help you work with others or manage tasks?"
+          examples="Team Collaboration, Project Management, Problem Solving, Critical Thinking, Time Management, Public Speaking"
           value={inputs.professional}
           onChange={(v: string) => setInputs(p => ({ ...p, professional: v }))}
           onAdd={() => addToList('professionalSkills', inputs.professional, 'professional')}
@@ -220,8 +219,7 @@ const ExpertiseForm: React.FC<Props> = ({ profile, updateProfile, readOnly, vali
         {/* 5. Academic Interests */}
         <SkillSection 
           title="5. Academic Interests"
-          description="What specific topics or areas in STEM fascinate you the most?"
-          examples="Quantum Mechanics, Astrophysics, Robotics, Genetics, Sustainable Energy, Number Theory, etc."
+          description="What topics in STEM fascinate you the most?"
           value={inputs.interest}
           onChange={(v: string) => setInputs(p => ({ ...p, interest: v }))}
           onAdd={() => addToList('interests', inputs.interest, 'interest')}

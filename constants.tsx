@@ -1,3 +1,4 @@
+import { Section } from './types';
 
 export const DEGREE_OPTIONS = [
   'B.Tech / B.E.',

@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
@@ -6,6 +7,8 @@ import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
+import type { ChatPreferences, Profile } from './types';
+import { appendProfileToGoogleSheet } from './googleSheets';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key-for-dev';
@@ -25,7 +28,7 @@ db.exec(`
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT || 8505);
 
   app.use(express.json());
   app.use(cookieParser());
@@ -89,6 +92,41 @@ async function startServer() {
   app.post('/api/auth/logout', (req, res) => {
     res.clearCookie('token');
     res.json({ success: true });
+  });
+
+  // Append full profile (+ chat prefs) to Google Sheet as one dataframe row
+  app.post('/api/profile/sheets', async (req, res) => {
+    const body = req.body as { profile?: Profile; chatPreferences?: ChatPreferences };
+    const profile = body.profile;
+    if (!profile || typeof profile !== 'object') {
+      return res.status(400).json({ error: 'profile is required' });
+    }
+
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID?.trim();
+    const hasCredentials = Boolean(
+      process.env.GOOGLE_SHEETS_CREDENTIALS_PATH?.trim() ||
+        process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON?.trim() ||
+        process.env.GOOGLE_SHEET_API_KEY?.trim() ||
+        process.env.GOOGLE_SHEETS_API_KEY?.trim()
+    );
+
+    if (!spreadsheetId || !hasCredentials) {
+      const missing: string[] = [];
+      if (!spreadsheetId) missing.push('GOOGLE_SHEETS_SPREADSHEET_ID');
+      if (!hasCredentials) missing.push('GOOGLE_SHEETS_CREDENTIALS_PATH or GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON (service account JSON)');
+
+      console.warn(`[sheets] Missing env: ${missing.join(', ')}; skipping Google Sheet append (local dev).`);
+      return res.json({ ok: true, sheetsSkipped: true, missing });
+    }
+
+    try {
+      await appendProfileToGoogleSheet(profile, body.chatPreferences);
+      return res.json({ ok: true, sheetsSkipped: false });
+    } catch (err) {
+      console.error('[sheets]', err);
+      const message = err instanceof Error ? err.message : 'Failed to write to Google Sheet';
+      return res.status(500).json({ error: message });
+    }
   });
 
   // Get current user

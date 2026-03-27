@@ -15,7 +15,7 @@ interface Props {
   updateProfile: (updates: Partial<Profile>) => void;
 }
 
-const VIGYAN_SHAALA_LOGO = "https://vigyanshaala.com/wp-content/uploads/2021/01/VigyanShaala-Logo-Horizontal-1.png";
+const VIGYAN_SHAALA_LOGO = '/log.png';
 const STORAGE_KEY = 'vs_reflection_profile';
 
 const ReviewPage: React.FC<Props> = ({ profile, completeness, setCurrentSection, chatPreferences, setChatPreferences, updateProfile }) => {
@@ -26,6 +26,7 @@ const ReviewPage: React.FC<Props> = ({ profile, completeness, setCurrentSection,
 
   const [isSaved, setIsSaved] = useState(false);
   const [isUpdatingCurie, setIsUpdatingCurie] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [curieSuccess, setCurieSuccess] = useState(profile.lastSyncedAt && !isOutOfSync ? true : false);
   const [showPreferencePrompt, setShowPreferencePrompt] = useState(false);
   const [pendingSection, setPendingSection] = useState<Section | null>(null);
@@ -148,7 +149,7 @@ const ReviewPage: React.FC<Props> = ({ profile, completeness, setCurrentSection,
     return hasIdentity && hasExpertise && hasMilestones && hasValidProjects && hasValidExams && hasValidCerts;
   }, [profile]);
 
-  const isLocked = completeness < 70 || !hasMandatoryFields;
+  const isLocked = !hasMandatoryFields;
   const isPdfLocked = isLocked || !profile.lastSyncedAt;
 
   const nextSectionToComplete = useMemo(() => {
@@ -170,17 +171,38 @@ const ReviewPage: React.FC<Props> = ({ profile, completeness, setCurrentSection,
     executeSync();
   };
 
-  const executeSync = () => {
+  const executeSync = async () => {
     setShowPreferencePrompt(false);
+    setSyncError(null);
     const now = new Date().toISOString();
-    updateProfile({ lastSyncedAt: now });
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...profile, lastSyncedAt: now }));
     setIsUpdatingCurie(true);
-    
-    setTimeout(() => {
-      setIsUpdatingCurie(false);
+    setCurieSuccess(false);
+
+    try {
+      const res = await fetch('/api/profile/sheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          profile: { ...profile, lastSyncedAt: now },
+          chatPreferences,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean };
+
+      if (!res.ok) {
+        throw new Error(data.error || `Sync failed (${res.status})`);
+      }
+
+      updateProfile({ lastSyncedAt: now });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...profile, lastSyncedAt: now }));
       setCurieSuccess(true);
-    }, 2000);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Sync failed';
+      setSyncError(message);
+    } finally {
+      setIsUpdatingCurie(false);
+    }
   };
 
   const downloadPdf = () => {
@@ -350,8 +372,8 @@ const ReviewPage: React.FC<Props> = ({ profile, completeness, setCurrentSection,
                   </svg>
                 </div>
                 <div className="flex-1">
-                  <h4 className="text-lg font-black text-[#2c4869] uppercase leading-tight">Profile Locked ({completeness}%)</h4>
-                  <p className="text-sm font-medium text-[#2c4869]/70 mt-1 mb-4">You need at least 70% completion to Sync or Download your profile.</p>
+                  <h4 className="text-lg font-black text-[#2c4869] uppercase leading-tight">Complete Level 1 to Continue</h4>
+                  <p className="text-sm font-medium text-[#2c4869]/70 mt-1 mb-4">Sync unlocks once all mandatory Level 1 fields are complete.</p>
                   
                   <div className="space-y-3">
                     <p className="text-[10px] font-black text-[#2c4869]/40 uppercase tracking-widest">Missing Mandatory Fields:</p>
@@ -437,10 +459,16 @@ const ReviewPage: React.FC<Props> = ({ profile, completeness, setCurrentSection,
                   <span className="text-xl uppercase tracking-tight">
                     {profile.lastSyncedAt ? 'Sync Changes' : 'Sync Profile'}
                   </span>
-                  {isLocked && <span className="text-[10px] opacity-60">Unlock at 70% completion</span>}
+                  {isLocked && <span className="text-[10px] opacity-60">Complete Level 1 mandatory fields to unlock</span>}
                 </>
               )}
             </button>
+
+            {syncError && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-center">
+                <p className="text-[11px] font-bold text-red-700 break-words">{syncError}</p>
+              </div>
+            )}
 
             {profile.lastSyncedAt && (
               <div className="text-center">
