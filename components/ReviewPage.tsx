@@ -29,6 +29,7 @@ const ReviewPage: React.FC<Props> = ({ profile, completeness, setCurrentSection,
   const [syncError, setSyncError] = useState<string | null>(null);
   const [curieSuccess, setCurieSuccess] = useState(profile.lastSyncedAt && !isOutOfSync ? true : false);
   const [showPreferencePrompt, setShowPreferencePrompt] = useState(false);
+  const [showSyncSuccessModal, setShowSyncSuccessModal] = useState(false);
   const [pendingSection, setPendingSection] = useState<Section | null>(null);
 
   // Update success state if sync status changes
@@ -197,6 +198,7 @@ const ReviewPage: React.FC<Props> = ({ profile, completeness, setCurrentSection,
       updateProfile({ lastSyncedAt: now });
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...profile, lastSyncedAt: now }));
       setCurieSuccess(true);
+      setShowSyncSuccessModal(true);
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Sync failed';
       setSyncError(message);
@@ -604,6 +606,30 @@ const ReviewPage: React.FC<Props> = ({ profile, completeness, setCurrentSection,
                   Cancel
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showSyncSuccessModal && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-[#2c4869]/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 16 }}
+              className="bg-white rounded-[32px] p-8 max-w-lg w-full shadow-2xl border border-slate-100"
+            >
+              <h3 className="text-2xl font-black text-[#2c4869] tracking-tight mb-4">Profile Synced Successfully 🎉</h3>
+              <p className="text-sm font-medium text-[#2c4869]/80 leading-relaxed mb-8">
+                Your progress has been saved and updated.
+              </p>
+              <button
+                onClick={() => setShowSyncSuccessModal(false)}
+                className="w-full py-4 rounded-2xl bg-[#2c4869] text-white font-black uppercase tracking-widest text-xs hover:bg-[#2c4869]/90 transition-all active:scale-[0.98]"
+              >
+                Continue
+              </button>
             </motion.div>
           </div>
         )}

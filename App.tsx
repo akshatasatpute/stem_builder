@@ -13,6 +13,7 @@ import SectionSummary from './components/SectionSummary';
 import EmojiBurst from './components/EmojiBurst';
 import ChatSettings from './components/ChatSettings';
 import { Auth } from './components/Auth';
+import AvatarProgress from './components/AvatarProgress';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
 
@@ -21,6 +22,7 @@ const STORAGE_KEY = 'vs_reflection_profile';
 const CHAT_PREFS_KEY = 'vs_chat_preferences';
 const LEVEL_1_SECTIONS: Section[] = [Section.BASIC, Section.ACADEMIC, Section.SKILLS, Section.MILESTONES];
 const LEVEL_2_SECTIONS: Section[] = [Section.REFLECTIONS, Section.REVIEW];
+const JOURNEY_STEPS: Section[] = [Section.BASIC, Section.ACADEMIC, Section.SKILLS, Section.MILESTONES, Section.REFLECTIONS];
 
 const MILESTONE_EMOJIS: Record<string, string[]> = {
   [Section.BASIC]: ['👤', '✨', '👋', '✅'],
@@ -101,10 +103,19 @@ const App: React.FC = () => {
   const [successToast, setSuccessToast] = useState<{ message: string; section: Section } | null>(null);
   const [editingSection, setEditingSection] = useState<Section | null>(Section.BASIC);
   const [draftProfile, setDraftProfile] = useState<Profile | null>(null);
+  const [selectedLevelCard, setSelectedLevelCard] = useState<'level1' | 'level2' | null>(null);
   const [showLevel2Prompt, setShowLevel2Prompt] = useState(false);
   const [level2PromptHandled, setLevel2PromptHandled] = useState(false);
+  const [level2AccessGranted, setLevel2AccessGranted] = useState(false);
+  const [reflectionsFocusPulse, setReflectionsFocusPulse] = useState(false);
+  const [journeyMessage, setJourneyMessage] = useState<string | null>(null);
+  const [xpMessage, setXpMessage] = useState<string | null>(null);
+  const [avatarGrowthToast, setAvatarGrowthToast] = useState<string | null>(null);
+  const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const previousUnlockedCountRef = useRef(1);
+  const previousAvatarStageRef = useRef(1);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -220,6 +231,10 @@ const App: React.FC = () => {
         setVisibleSections(prev => [...prev, nextSection]);
       }
       setEditingSection(nextSection);
+      const nextJourneyIndex = JOURNEY_STEPS.indexOf(nextSection);
+      if (nextJourneyIndex >= 0) {
+        setCurrentSectionIndex(prev => Math.max(prev, nextJourneyIndex));
+      }
       setTimeout(() => {
         sectionRefs.current[nextSection]?.scrollIntoView({ 
           behavior: 'smooth', 
@@ -249,6 +264,9 @@ const App: React.FC = () => {
     if (hasEnoughForMilestone(section, draftProfile)) {
       triggerMilestoneCelebration(section);
     }
+    setJourneyMessage(`${section === Section.BASIC ? 'Identity' : section === Section.ACADEMIC ? 'Academics' : section === Section.SKILLS ? 'Expertise' : section === Section.MILESTONES ? 'Milestones' : 'Reflections'} completed ✅`);
+    setXpMessage('+10 XP');
+    setTimeout(() => setXpMessage(null), 1400);
     
     // Auto scroll to next section
     const allSections = [
@@ -263,6 +281,10 @@ const App: React.FC = () => {
         setVisibleSections(prev => [...prev, nextSection]);
       }
       setEditingSection(nextSection);
+      const nextJourneyIndex = JOURNEY_STEPS.indexOf(nextSection);
+      if (nextJourneyIndex >= 0) {
+        setCurrentSectionIndex(prev => Math.max(prev, nextJourneyIndex));
+      }
       setTimeout(() => {
         sectionRefs.current[nextSection]?.scrollIntoView({ 
           behavior: 'smooth', 
@@ -312,6 +334,12 @@ const App: React.FC = () => {
     return false;
   };
 
+  const getJourneyIndex = (section: Section | null): number => {
+    if (!section) return 0;
+    const idx = JOURNEY_STEPS.indexOf(section);
+    return idx >= 0 ? idx : 0;
+  };
+
   const handleStart = (importedProfile?: Profile) => {
     if (importedProfile) {
       const merged = mergeProfileWithDefaults(importedProfile);
@@ -349,9 +377,13 @@ const App: React.FC = () => {
       
       setVisibleSections(newVisibleSections);
       setEditingSection(firstEmptySection);
+      setCurrentSectionIndex(firstEmptySection ? getJourneyIndex(firstEmptySection) : JOURNEY_STEPS.length - 1);
+      setLevel2AccessGranted(isSectionFilled(Section.REFLECTIONS, merged));
     } else {
       // If it's a new profile, make the first section editable
       setEditingSection(Section.BASIC);
+      setCurrentSectionIndex(0);
+      setLevel2AccessGranted(false);
     }
     setIsStarted(true);
     window.scrollTo(0, 0);
@@ -390,13 +422,13 @@ const App: React.FC = () => {
   const getMandatoryMissingFields = (section: Section, prof: Profile = profile): Record<string, string> => {
     const missing: Record<string, string> = {};
     if (section === Section.BASIC) {
-      if (!prof.fullName.trim()) missing["fullName"] = "Full Name is required";
-      if (!prof.whatsappNumber?.trim()) missing["whatsappNumber"] = "WhatsApp Number is required";
+      if (!prof.fullName.trim()) missing["fullName"] = "This field is required";
+      if (!prof.whatsappNumber?.trim()) missing["whatsappNumber"] = "This field is required";
     } else if (section === Section.ACADEMIC) {
-      if (!prof.academicStatus) missing["academicStatus"] = "Academic Status is required";
-      if (!prof.collegeName.trim()) missing["collegeName"] = "Institution is required";
-      if (!prof.degreeType) missing["degreeType"] = "Degree is required";
-      if (!prof.topLevelCategory) missing["topLevelCategory"] = "Broad STEM Stream is required";
+      if (!prof.academicStatus) missing["academicStatus"] = "This field is required";
+      if (!prof.collegeName.trim()) missing["collegeName"] = "This field is required";
+      if (!prof.degreeType) missing["degreeType"] = "This field is required";
+      if (!prof.topLevelCategory) missing["topLevelCategory"] = "This field is required";
     } else if (section === Section.SKILLS) {
       const hasExpertise = 
         prof.subjectSkills.length > 0 || 
@@ -406,7 +438,7 @@ const App: React.FC = () => {
         prof.interests.length > 0;
       
       if (!hasExpertise) {
-        missing["expertise"] = "Please add at least one skill or interest";
+        missing["expertise"] = "This field is required";
       }
     } else if (section === Section.MILESTONES) {
       const hasMilestones = 
@@ -415,21 +447,26 @@ const App: React.FC = () => {
         prof.certifications.length > 0;
 
       if (!hasMilestones) {
-        missing["milestones"] = "Please add at least one project, exam, or certification";
+        missing["milestones"] = "This field is required";
       }
 
       prof.projects.forEach((project, index) => {
-        if (!project.name.trim()) missing[`projectName_${index}`] = `Project Title is required`;
-        if (project.name.trim() && !project.status) missing[`projectStatus_${index}`] = `Status for ${project.name} is required`;
+        if (!project.name.trim()) missing[`projectName_${index}`] = "This field is required";
+        if (project.name.trim() && !project.status) missing[`projectStatus_${index}`] = "This field is required";
       });
       prof.exams.forEach((exam, index) => {
-        if (!exam.name.trim()) missing[`examName_${index}`] = `Exam Name is required`;
-        if (exam.name.trim() && !exam.status) missing[`examStatus_${index}`] = `Status for ${exam.name} is required`;
+        if (!exam.name.trim()) missing[`examName_${index}`] = "This field is required";
+        if (exam.name.trim() && !exam.status) missing[`examStatus_${index}`] = "This field is required";
       });
       prof.certifications.forEach((cert, index) => {
-        if (!cert.name.trim()) missing[`certificationName_${index}`] = `Certification Name is required`;
-        if (cert.name.trim() && !cert.status) missing[`certificationStatus_${index}`] = `Status for ${cert.name} is required`;
+        if (!cert.name.trim()) missing[`certificationName_${index}`] = "This field is required";
+        if (cert.name.trim() && !cert.status) missing[`certificationStatus_${index}`] = "This field is required";
       });
+    } else if (section === Section.REFLECTIONS) {
+      const hasAnyReflection = (Object.values(prof.reflections) as string[]).some((v) => !!v && v.trim().length > 0);
+      if (!hasAnyReflection) {
+        missing["reflections"] = "Please fill all required fields marked with *";
+      }
     }
     return missing;
   };
@@ -534,6 +571,58 @@ const App: React.FC = () => {
     }).length;
 
     return Math.round((filledCount / fields.length) * 100);
+  };
+
+  const getRequiredProgress = () => {
+    const graduationRequired = profile.yearOfStudy === 'Alumnus' ? 1 : 0;
+    const total =
+      4 + // identity: fullName, whatsapp, email, location
+      (7 + graduationRequired) + // academics
+      5 + // expertise
+      3 + // milestones categories
+      7; // reflections
+
+    let filled = 0;
+
+    // Identity
+    if (profile.fullName.trim()) filled += 1;
+    if (profile.whatsappNumber?.trim()) filled += 1;
+    if (profile.email.trim()) filled += 1;
+    if (profile.location.trim()) filled += 1;
+
+    // Academics
+    if (profile.collegeName.trim()) filled += 1;
+    if (profile.degreeType) filled += 1;
+    if (profile.yearOfStudy) filled += 1;
+    if (profile.yearOfStudy === 'Alumnus' && profile.graduationYear?.trim()) filled += 1;
+    if (profile.cgpa.trim()) filled += 1;
+    if (profile.topLevelCategory) filled += 1;
+    if (profile.specializationCategory) filled += 1;
+    if (profile.specialization) filled += 1;
+
+    // Expertise
+    if (profile.subjectSkills.length > 0) filled += 1;
+    if (profile.toolSkills.length > 0) filled += 1;
+    if (profile.aiSkills.length > 0) filled += 1;
+    if (profile.professionalSkills.length > 0) filled += 1;
+    if (profile.interests.length > 0) filled += 1;
+
+    // Milestones
+    if (profile.projects.length > 0) filled += 1;
+    if (profile.exams.length > 0) filled += 1;
+    if (profile.certifications.length > 0) filled += 1;
+
+    // Reflections
+    if (profile.reflections.impactPurpose.trim()) filled += 1;
+    if (profile.reflections.strengths.trim()) filled += 1;
+    if (profile.reflections.curiosity.trim()) filled += 1;
+    if (profile.reflections.grittyGrowth.trim()) filled += 1;
+    if (profile.reflections.spark.trim()) filled += 1;
+    if (profile.reflections.opportunities.trim()) filled += 1;
+    if (profile.reflections.threats.trim()) filled += 1;
+
+    const percent = total > 0 ? Math.round((filled / total) * 100) : 0;
+    return { total, filled, percent };
   };
 
   const isSectionDirty = (section: Section, prof: Profile = profile): boolean => {
@@ -643,17 +732,78 @@ const App: React.FC = () => {
   const level1Progress = getMandatoryProgressForSections(LEVEL_1_SECTIONS);
   const level2Progress = getMandatoryProgressForSections(LEVEL_2_SECTIONS);
   const level1Complete = level1Progress.percent === 100;
+  const identityComplete = Object.keys(getMandatoryMissingFields(Section.BASIC)).length === 0;
+  const academicsComplete = Object.keys(getMandatoryMissingFields(Section.ACADEMIC)).length === 0;
+  const expertiseComplete = Object.keys(getMandatoryMissingFields(Section.SKILLS)).length === 0;
+  const milestonesComplete = Object.keys(getMandatoryMissingFields(Section.MILESTONES)).length === 0;
+  const avatarStage =
+    level1Complete
+      ? 5
+      : academicsComplete && expertiseComplete && milestonesComplete
+      ? 4
+      : academicsComplete || expertiseComplete
+      ? 3
+      : identityComplete
+      ? 2
+      : 1;
+  const avatarStageMap: Record<number, { emoji: string; title: string; subtitle: string }> = {
+    1: { emoji: '👩‍🎓', title: 'Starting Your Journey', subtitle: 'College-going dreamer taking the first step.' },
+    2: { emoji: '🙋‍♀️', title: 'Understanding Yourself', subtitle: 'Clarity grows as your identity takes shape.' },
+    3: { emoji: '👩‍💻', title: 'Building Your Skills', subtitle: 'Focused effort is turning potential into capability.' },
+    4: { emoji: '💡👩‍💼', title: 'Shaping Your Career Path', subtitle: 'Your profile now reflects emerging professionalism.' },
+    5: { emoji: '👩‍💼', title: 'Career Ready', subtitle: 'Confident, polished, and ready for opportunities.' },
+  };
+  const currentAvatarMeta = avatarStageMap[avatarStage];
+  const requiredProgress = getRequiredProgress();
   const level2TotalFields = Object.values(profile.reflections).length;
   const level2FilledFields = (Object.values(profile.reflections) as string[]).filter((v) => v && v.trim().length > 0).length;
   const level2UiProgress = level2TotalFields > 0 ? Math.round((level2FilledFields / level2TotalFields) * 100) : 0;
   const isLevel1Active = editingSection ? LEVEL_1_SECTIONS.includes(editingSection) : false;
   const isLevel2Active = editingSection ? LEVEL_2_SECTIONS.includes(editingSection) : false;
+  const completedMap: Record<Section, boolean> = {
+    [Section.BASIC]: Object.keys(validateSection(Section.BASIC)).length === 0,
+    [Section.ACADEMIC]: Object.keys(validateSection(Section.ACADEMIC)).length === 0,
+    [Section.SKILLS]: Object.keys(validateSection(Section.SKILLS)).length === 0,
+    [Section.MILESTONES]: Object.keys(validateSection(Section.MILESTONES)).length === 0,
+    [Section.REFLECTIONS]: Object.keys(validateSection(Section.REFLECTIONS)).length === 0,
+    [Section.REVIEW]: false,
+  };
+  const unlockedCount = Math.min(JOURNEY_STEPS.length, currentSectionIndex + 1);
+  const completedCount = JOURNEY_STEPS.filter((s) => completedMap[s]).length;
+  const overallJourneyProgress = Math.round((completedCount / JOURNEY_STEPS.length) * 100);
 
   useEffect(() => {
     if (level1Complete && !level2PromptHandled) {
       setShowLevel2Prompt(true);
     }
   }, [level1Complete, level2PromptHandled]);
+
+  useEffect(() => {
+    if (unlockedCount > previousUnlockedCountRef.current && unlockedCount <= JOURNEY_STEPS.length) {
+      const justUnlocked = JOURNEY_STEPS[unlockedCount - 1];
+      const unlockedName =
+        justUnlocked === Section.BASIC
+          ? 'Identity'
+          : justUnlocked === Section.ACADEMIC
+          ? 'Academics'
+          : justUnlocked === Section.SKILLS
+          ? 'Expertise'
+          : justUnlocked === Section.MILESTONES
+          ? 'Milestones'
+          : 'Reflections';
+      setJourneyMessage(`You unlocked ${unlockedName} 🎉`);
+      setTimeout(() => setJourneyMessage(null), 2200);
+    }
+    previousUnlockedCountRef.current = unlockedCount;
+  }, [unlockedCount]);
+
+  useEffect(() => {
+    if (avatarStage > previousAvatarStageRef.current) {
+      setAvatarGrowthToast(`🎉 You've grown into a ${currentAvatarMeta.title}!`);
+      setTimeout(() => setAvatarGrowthToast(null), 2600);
+    }
+    previousAvatarStageRef.current = avatarStage;
+  }, [avatarStage, currentAvatarMeta.title]);
 
   const handleProceedToLevel2 = () => {
     setVisibleSections((prev) => {
@@ -664,8 +814,12 @@ const App: React.FC = () => {
       return next;
     });
     setEditingSection(Section.REFLECTIONS);
+    setCurrentSectionIndex(Math.max(currentSectionIndex, JOURNEY_STEPS.indexOf(Section.REFLECTIONS)));
+    setLevel2AccessGranted(true);
     setShowLevel2Prompt(false);
     setLevel2PromptHandled(true);
+    setReflectionsFocusPulse(true);
+    setTimeout(() => setReflectionsFocusPulse(false), 1800);
     setTimeout(() => {
       sectionRefs.current[Section.REFLECTIONS]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 100);
@@ -674,12 +828,14 @@ const App: React.FC = () => {
   const handleSkipLevel2Prompt = () => {
     setShowLevel2Prompt(false);
     setLevel2PromptHandled(true);
+    setLevel2AccessGranted(false);
     setVisibleSections((prev) => {
       const next = [...prev];
       if (!next.includes(Section.REVIEW)) next.push(Section.REVIEW);
       return next;
     });
     setEditingSection(Section.REVIEW);
+    setCurrentSectionIndex(JOURNEY_STEPS.length - 1);
     setTimeout(() => {
       sectionRefs.current[Section.REVIEW]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 100);
@@ -716,6 +872,10 @@ const App: React.FC = () => {
         }
         setVisibleSections(prev => [...prev, nextSection]);
         setEditingSection(nextSection);
+        const nextJourneyIndex = JOURNEY_STEPS.indexOf(nextSection);
+        if (nextJourneyIndex >= 0) {
+          setCurrentSectionIndex(prev => Math.max(prev, nextJourneyIndex));
+        }
         
         // Scroll to next section after a short delay to allow it to render
         setTimeout(() => {
@@ -727,6 +887,10 @@ const App: React.FC = () => {
       } else {
         // Already visible, move editing focus to next
         setEditingSection(nextSection);
+        const nextJourneyIndex = JOURNEY_STEPS.indexOf(nextSection);
+        if (nextJourneyIndex >= 0) {
+          setCurrentSectionIndex(prev => Math.max(prev, nextJourneyIndex));
+        }
         sectionRefs.current[nextSection]?.scrollIntoView({ 
           behavior: 'smooth', 
           block: 'start' 
@@ -766,8 +930,6 @@ const App: React.FC = () => {
     }} />;
   }
 
-  const sections = Object.values(Section);
-
   return (
     <div className="min-h-screen bg-[#fcfcfc] flex flex-col pb-32">
       <EmojiBurst trigger={showMilestoneBurst} emojis={currentBurstEmojis} />
@@ -793,17 +955,33 @@ const App: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <AnimatePresence>
+        {avatarGrowthToast && (
+          <motion.div
+            key={avatarGrowthToast}
+            initial={{ opacity: 0, y: -10, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.98 }}
+            className="fixed top-24 right-6 z-[70]"
+          >
+            <div className="rounded-xl bg-[#2c4869] text-white text-xs font-bold px-4 py-2 shadow-lg">
+              {avatarGrowthToast}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       
       <div className="bg-white/40 backdrop-blur-md py-2.5 border-b border-slate-200/50 z-30 sticky top-0">
-        <div className="max-w-2xl mx-auto px-6 flex items-center justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-black text-[#2c4869] uppercase tracking-[0.2em] leading-none">
-            Your STEM Growth Journey
-            </span>
-            <span className="text-[10px] font-medium text-[#2c4869]/70 leading-none">
-            This profile builder is your living record of growth. STEM is dynamic, and so are you.
-            </span>
-          </div>
+        <div className="max-w-5xl mx-auto px-6 grid grid-cols-[auto_1fr_auto] items-center gap-3">
+          <img 
+            src={VIGYAN_SHAALA_LOGO} 
+            alt="VigyanShaala Logo" 
+            className="h-9 sm:h-10 object-contain shrink-0"
+          />
+          <h1 className="text-center text-2xl sm:text-3xl md:text-4xl font-black tracking-[0.08em] text-[#2c4869] leading-none">
+            STEM Growth Builder
+          </h1>
           <button
             onClick={async () => {
               await fetch('/api/auth/logout', { method: 'POST' });
@@ -823,13 +1001,6 @@ const App: React.FC = () => {
       <header className="sticky top-[38px] z-20 bg-white/80 backdrop-blur-md border-b border-slate-200 flex flex-col shadow-sm">
         <div className="px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-3">
-              <img 
-                src={VIGYAN_SHAALA_LOGO} 
-                alt="VigyanShaala Logo" 
-                className="h-9 sm:h-10 object-contain"
-              />
-            </div>
             {profile.lastUpdatedAt && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1">
                 <div className="flex items-center gap-2 text-[9px] font-black text-[#2c4869]/40 uppercase tracking-widest">
@@ -846,76 +1017,102 @@ const App: React.FC = () => {
             )}
           </div>
           
-          <div className="flex items-start gap-3 flex-1 justify-end w-full">
-            <div className="flex flex-col items-end gap-1">
-              <div className="flex items-center gap-3">
-                <div className="relative w-12 h-12">
-                  <svg className="w-12 h-12 -rotate-90" viewBox="0 0 40 40">
-                    <circle cx="20" cy="20" r="16" stroke="currentColor" strokeWidth="4" fill="none" className="text-slate-200" />
-                    <circle
-                      cx="20"
-                      cy="20"
-                      r="16"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      fill="none"
-                      strokeLinecap="round"
-                      className="text-emerald-500 transition-all duration-700"
-                      strokeDasharray={2 * Math.PI * 16}
-                      strokeDashoffset={(2 * Math.PI * 16) * (1 - level1Progress.percent / 100)}
-                    />
-                  </svg>
-                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-[#2c4869]">{level1Progress.percent}%</span>
-                </div>
-                <div className="relative w-12 h-12">
-                  <svg className="w-12 h-12 -rotate-90" viewBox="0 0 40 40">
-                    <circle cx="20" cy="20" r="16" stroke="currentColor" strokeWidth="4" fill="none" className="text-slate-200" />
-                    <circle
-                      cx="20"
-                      cy="20"
-                      r="16"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      fill="none"
-                      strokeLinecap="round"
-                      className="text-[#f58434] transition-all duration-700"
-                      strokeDasharray={2 * Math.PI * 16}
-                      strokeDashoffset={(2 * Math.PI * 16) * (1 - level2UiProgress / 100)}
-                    />
-                  </svg>
-                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-[#2c4869]">{level2UiProgress}%</span>
-                </div>
-              </div>
-              {level1Complete && (
-                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-wider">All mandatory fields completed ✅</p>
-              )}
-            </div>
-          </div>
+          <div className="flex items-start gap-3 flex-1 justify-end w-full" />
         </div>
         
-        <div className="w-full border-t border-slate-200/50 bg-slate-50/50 px-6 py-2 overflow-x-auto no-scrollbar flex gap-4">
-          <div className="flex gap-2 max-w-2xl mx-auto w-full justify-center">
-            {sections.map((sec) => {
-              const isVisible = visibleSections.includes(sec);
-              if (!isVisible) return null;
-              const isCurrent = editingSection === sec;
+        <div className="w-full border-t border-slate-200/50 bg-slate-50/50 px-6 py-2.5 overflow-x-auto no-scrollbar">
+          <div className="max-w-5xl mx-auto w-full space-y-2.5">
+            <div className="max-w-4xl mx-auto rounded-2xl border border-slate-200 bg-white/90 shadow-sm px-3 py-2">
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-center">
+                <div className="w-full min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-[#2c4869]/60">Overall Progress</p>
+                    <p className="text-[12px] font-black text-emerald-700">{requiredProgress.percent}% Complete</p>
+                  </div>
+                  <div className="h-2.5 w-full bg-white border border-slate-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-500 transition-all duration-700 ease-in-out"
+                      style={{ width: `${requiredProgress.percent}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="md:ml-2 flex justify-center md:justify-end">
+                  <motion.div
+                    key={`top-avatar-${avatarStage}`}
+                    initial={{ opacity: 0.6, scale: 0.94 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.4, ease: 'easeOut' }}
+                  >
+                    <AvatarProgress
+                      progress={overallJourneyProgress}
+                      xpMessage={xpMessage}
+                      small
+                      avatarEmoji={currentAvatarMeta.emoji}
+                      stageLabel={currentAvatarMeta.title}
+                      stageSubtitle={currentAvatarMeta.subtitle}
+                      activeState={avatarStage >= 5 ? 'completed' : avatarStage >= 3 ? 'active' : 'incomplete'}
+                    />
+                  </motion.div>
+                </div>
+              </div>
+            </div>
+            <div className="max-w-4xl mx-auto flex items-center gap-1.5 w-full justify-between">
+            {JOURNEY_STEPS.map((sec, idx) => {
+              const isCompleted = completedMap[sec];
+              const isActive = editingSection === sec;
+              const isUnlocked = idx <= currentSectionIndex;
+              const isReflectionLocked = sec === Section.REFLECTIONS && !level1Complete;
+              const isLocked = !isUnlocked || isReflectionLocked;
+              const label =
+                sec === Section.BASIC
+                  ? 'IDENTITY'
+                  : sec === Section.ACADEMIC
+                  ? 'ACADEMICS'
+                  : sec === Section.SKILLS
+                  ? 'EXPERTISE'
+                  : sec === Section.MILESTONES
+                  ? 'MILESTONES'
+                  : 'REFLECTIONS';
 
               return (
-                <button
-                  key={sec}
-                  onClick={() => {
-                    sectionRefs.current[sec]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }}
-                  className={`whitespace-nowrap px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-wider transition-all border ${
-                    isCurrent
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-sm'
-                      : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  {sec.split(' ')[0]}
-                </button>
+                <React.Fragment key={sec}>
+                  <button
+                    type="button"
+                    disabled={isLocked}
+                    onClick={() => {
+                      if (isReflectionLocked) {
+                        setSkipMessage('Please complete all required Level 1 sections to unlock Reflections.');
+                        setTimeout(() => setSkipMessage(null), 3200);
+                        return;
+                      }
+                      setEditingSection(sec);
+                      sectionRefs.current[sec]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}
+                    className={`whitespace-nowrap px-3 py-1.5 rounded-full text-[10px] font-black tracking-wider transition-all border ${
+                      isCompleted
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                        : isActive
+                        ? 'bg-blue-50 text-blue-700 border-blue-300 shadow-sm'
+                        : isLocked
+                        ? 'bg-white text-slate-300 border-slate-200 cursor-not-allowed'
+                        : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    {isCompleted ? `✅ ${label}` : isLocked ? `🔒 ${label}` : label}
+                  </button>
+                  {idx < JOURNEY_STEPS.length - 1 && (
+                    <div className="w-5 h-[3px] rounded-full overflow-hidden bg-white border border-slate-200">
+                      <div
+                        className={`h-full transition-all duration-700 ease-in-out ${
+                          completedMap[sec] ? 'w-full bg-emerald-500' : 'w-0 bg-emerald-500'
+                        }`}
+                      />
+                    </div>
+                  )}
+                </React.Fragment>
               );
             })}
+            </div>
           </div>
         </div>
       </header>
@@ -948,60 +1145,83 @@ const App: React.FC = () => {
         )}
       </AnimatePresence>
 
-      <main className="flex-1 w-full max-w-2xl mx-auto px-6 pt-8 space-y-12">
+      <main className="flex-1 w-full max-w-5xl mx-auto px-6 pt-8">
+        <div className="grid grid-cols-1 gap-6 items-stretch">
+        <div className="space-y-12 max-w-4xl mx-auto w-full">
         <section className="space-y-4 bg-white border border-slate-200 rounded-3xl p-6 shadow-md transition-all duration-300">
-          <h1 className="text-2xl font-black text-[#2c4869] tracking-tight">Your STEM Growth Journey</h1>
-          <p className="text-sm text-[#2c4869]/70 font-medium leading-relaxed">
-            This profile builder is your living record of growth. STEM is dynamic, and so are you. Use this space to
-            track your progress, stay relevant, and refine your goals as you build your career.
-          </p>
           <p className="text-xs font-bold text-[#2c4869]/60">You're building your STEM journey!</p>
-          <p className="text-[11px] text-[#2c4869] font-bold text-center">
-            Click on the cards below to begin your journey
+          {journeyMessage && (
+            <motion.p
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-sm font-bold text-[#2c4869]"
+            >
+              {journeyMessage}
+            </motion.p>
+          )}
+          <p className={`text-[13px] font-bold text-center transition-colors duration-300 ${selectedLevelCard ? 'text-[#2c4869]' : 'text-[#f58434] animate-pulse'}`}>
+            {selectedLevelCard ? 'Great! Continue building your profile below' : 'Click on the cards below to begin your journey'}
           </p>
           <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <button
               onClick={() => {
+                setSelectedLevelCard('level1');
                 setVisibleSections((prev) => (prev.includes(Section.BASIC) ? prev : [Section.BASIC, ...prev]));
                 setEditingSection(Section.BASIC);
                 sectionRefs.current[Section.BASIC]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
               }}
-              className="text-left rounded-2xl border border-[#f58434]/30 bg-[#f58434] text-white p-4 shadow-sm hover:shadow-md hover:scale-[1.01] transition-all cursor-pointer"
+              className={`text-left rounded-2xl border p-4 shadow-sm hover:shadow-md hover:scale-[1.01] transition-all cursor-pointer ${
+                selectedLevelCard === 'level1'
+                  ? 'bg-[#f58434] border-[#f58434] text-white shadow-md'
+                  : 'bg-white border-slate-200 text-[#2c4869] hover:border-[#f58434]/30'
+              }`}
             >
-              <p className="text-xs font-black uppercase tracking-widest text-white">🚀 Level 1: Foundation Builder</p>
-              <p className="text-sm text-white/90 font-medium leading-relaxed">
+              <p className={`text-xs font-black uppercase tracking-widest ${selectedLevelCard === 'level1' ? 'text-white' : 'text-[#2c4869]'}`}>🟢 Foundation Mode</p>
+              <p className={`text-sm font-medium leading-relaxed ${selectedLevelCard === 'level1' ? 'text-white/90' : 'text-[#2c4869]/70'}`}>
                 Complete your foundational profile to unlock personalized guidance.
               </p>
             </button>
             <button
               onClick={() => {
+                setSelectedLevelCard('level2');
                 if (!level1Complete) {
-                  setSkipMessage('Complete Level 1 to unlock Level 2');
+                  setSkipMessage('Please complete all required Level 1 sections to unlock Reflections.');
                   setTimeout(() => setSkipMessage(null), 3000);
                   return;
                 }
                 handleProceedToLevel2();
               }}
               className={`text-left rounded-2xl border p-4 shadow-sm hover:shadow-md hover:scale-[1.01] transition-all cursor-pointer ${
-                level1Complete ? 'border-[#f58434]/30 bg-[#f58434] text-white' : 'border-slate-200 bg-slate-100/70'
+                selectedLevelCard === 'level2'
+                  ? 'bg-[#f58434] border-[#f58434] text-white shadow-md'
+                  : (level1Complete ? 'bg-white border-slate-200 text-[#2c4869] hover:border-[#f58434]/30' : 'border-slate-200 bg-slate-100/70')
               }`}
             >
-              <p className={`text-xs font-black uppercase tracking-widest ${level1Complete ? 'text-white' : 'text-[#2c4869]'}`}>🌱 Level 2: Growth Accelerator</p>
-              <p className={`text-sm font-medium leading-relaxed ${level1Complete ? 'text-white/90' : 'text-[#2c4869]/70'}`}>
+              <p className={`text-xs font-black uppercase tracking-widest ${selectedLevelCard === 'level2' ? 'text-white' : 'text-[#2c4869]'}`}>🔵 Power-Up Mode</p>
+              <p className={`text-sm font-medium leading-relaxed ${selectedLevelCard === 'level2' ? 'text-white/90' : 'text-[#2c4869]/70'}`}>
                 Unlocked after baseline, providing tailored mentorship and insights.
               </p>
             </button>
           </div>
         </section>
 
+        {selectedLevelCard && (
         <AnimatePresence mode="popLayout">
           {[
-            { key: 'level1', title: '🚀 Level 1: Foundation Builder', sections: LEVEL_1_SECTIONS, progress: level1Progress, locked: false },
-            { key: 'level2', title: '🌱 Level 2: Growth Accelerator', sections: LEVEL_2_SECTIONS, progress: level2Progress, locked: !level1Complete },
+            { key: 'level1', title: '🟢 Foundation Mode', sections: LEVEL_1_SECTIONS, progress: level1Progress, locked: false },
+            { key: 'level2', title: '🔵 Power-Up Mode', sections: LEVEL_2_SECTIONS, progress: level2Progress, locked: !level1Complete },
           ].map((levelGroup) => (
             <div key={levelGroup.key} className="space-y-8">
               {levelGroup.locked ? null : levelGroup.sections.map((section, index) => {
                 if (!visibleSections.includes(section)) return null;
+                if (section !== Section.REVIEW) {
+                  const stepIndex = JOURNEY_STEPS.indexOf(section);
+                  if (stepIndex >= 0 && stepIndex >= unlockedCount) return null;
+                }
+                if (section === Section.REFLECTIONS && !level2AccessGranted) return null;
+                const sectionProfile = draftProfile || profile;
+                const hasMandatoryMissing = Object.keys(getMandatoryMissingFields(section, sectionProfile)).length > 0;
+                const lockIdentityActions = section === Section.BASIC && hasMandatoryMissing;
                 return (
                   <motion.div 
                     key={section}
@@ -1009,7 +1229,11 @@ const App: React.FC = () => {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.5, ease: "easeOut" }}
                     ref={el => sectionRefs.current[section] = el}
-                    className="scroll-mt-48"
+                    className={`scroll-mt-48 transition-all duration-700 ${
+                      section === Section.REFLECTIONS && reflectionsFocusPulse
+                        ? 'ring-2 ring-emerald-300 rounded-2xl shadow-[0_0_22px_rgba(16,185,129,0.22)]'
+                        : ''
+                    }`}
                   >
               <div className="mb-8">
                 <div className="flex items-center gap-3 mb-2">
@@ -1056,6 +1280,7 @@ const App: React.FC = () => {
                     {section === Section.SKILLS && (
                       <div className="space-y-1">
                         <p>What are you learning to do? From the tools you're just picking up to the skills you're mastering, every piece of your expertise helps Curie guide you.</p>
+                        <p className="text-xs opacity-80 italic">You are required to fill at least one of the above fields to proceed.</p>
                         <p className="text-xs opacity-80 italic">Why this matters: This foundational info helps Curie address you correctly and understand your context.</p>
                       </div>
                     )}
@@ -1065,6 +1290,11 @@ const App: React.FC = () => {
                       </div>
                     )}
                     {section === Section.REFLECTIONS && "Your reflections help us understand who you are as a learner: what drives you, what you're good at, what you're curious about, and where you may need support in your STEM journey. There are no right or wrong answers."}
+                    {section === Section.REFLECTIONS && (
+                      <p className="text-xs opacity-80 italic mt-1">
+                        You may fill any one of the below fields to proceed. Completing all is optional but recommended for better insights.
+                      </p>
+                    )}
                     {section === Section.REVIEW && "Check your answers before sending your data to Curie for personalized guidance."}
                   </div>
                 )}
@@ -1080,7 +1310,14 @@ const App: React.FC = () => {
                 ) : (
                   <>
                     {section === Section.BASIC && (
-                      <IdentityForm profile={draftProfile || profile} updateProfile={updateDraftProfile} validationErrors={validationErrors?.section === Section.BASIC ? validationErrors.fields : {}} />
+                      <IdentityForm
+                        profile={draftProfile || profile}
+                        updateProfile={updateDraftProfile}
+                        validationErrors={{
+                          ...(validationErrors?.section === Section.BASIC ? validationErrors.fields : {}),
+                          ...getMandatoryMissingFields(Section.BASIC, draftProfile || profile),
+                        }}
+                      />
                     )}
                     {section === Section.ACADEMIC && (
                       <AcademicForm profile={draftProfile || profile} updateProfile={updateDraftProfile} validationErrors={validationErrors?.section === Section.ACADEMIC ? validationErrors.fields : {}} />
@@ -1099,13 +1336,21 @@ const App: React.FC = () => {
                       <div className="flex items-center justify-center gap-4 mt-8">
                         <button 
                           onClick={handleCancel}
-                          className="px-6 py-2.5 rounded-xl font-black text-slate-500 hover:text-slate-700 transition-all"
+                          disabled={lockIdentityActions}
+                          className={`px-6 py-2.5 rounded-xl font-black transition-all ${
+                            lockIdentityActions ? 'text-slate-300 cursor-not-allowed' : 'text-slate-500 hover:text-slate-700'
+                          }`}
                         >
                           Cancel
                         </button>
                         <button 
                           onClick={() => handleSave(section)}
-                          className="px-6 py-2.5 rounded-xl font-black bg-[#2c4869] text-white shadow-lg hover:shadow-xl transition-all"
+                          disabled={hasMandatoryMissing}
+                          className={`px-6 py-2.5 rounded-xl font-black transition-all ${
+                            hasMandatoryMissing
+                              ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                              : 'bg-[#2c4869] text-white shadow-lg hover:shadow-xl'
+                          }`}
                         >
                           Save Changes
                         </button>
@@ -1142,7 +1387,7 @@ const App: React.FC = () => {
                               </svg>
                             </div>
                             <div>
-                              <p className="text-xs font-bold text-red-800 mb-1 uppercase tracking-wider">Missing Information</p>
+                              <p className="text-xs font-bold text-red-800 mb-1 uppercase tracking-wider">Please fill all required fields marked with *</p>
                               <ul className="text-sm text-red-700 leading-relaxed list-disc list-inside">
                                 {Object.values(validationErrors.fields).map((error, i) => (
                                   <li key={i}>{error}</li>
@@ -1165,6 +1410,9 @@ const App: React.FC = () => {
             </div>
           ))}
         </AnimatePresence>
+        )}
+      </div>
+      </div>
       </main>
 
       <AnimatePresence>
@@ -1176,23 +1424,22 @@ const App: React.FC = () => {
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
               className="bg-white rounded-3xl p-7 max-w-md w-full shadow-2xl border border-slate-100"
             >
-              <h3 className="text-xl font-black text-[#2c4869] tracking-tight">🎉 Level 1 Completed!</h3>
+              <h3 className="text-xl font-black text-[#2c4869] tracking-tight">🎉 Congratulations!</h3>
               <p className="text-sm text-[#2c4869]/70 font-medium mt-2 mb-6">
-                You're off to a strong start! 🚀
-                Unlock deeper insights and personalized guidance by continuing to Level 2.
+                You have successfully completed all required sections in Level 1.
               </p>
               <div className="grid grid-cols-1 gap-3">
                 <button
                   onClick={handleProceedToLevel2}
                   className="w-full py-3 rounded-xl bg-[#2c4869] text-white font-black uppercase tracking-widest text-xs hover:bg-[#2c4869]/90 transition-all"
                 >
-                  ✅ Proceed to Level 2
+                  Proceed to Level 2
                 </button>
                 <button
                   onClick={handleSkipLevel2Prompt}
                   className="w-full py-3 rounded-xl bg-white border border-slate-200 text-[#2c4869]/70 font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-all"
                 >
-                  ⏭ Skip for now
+                  Skip for Now
                 </button>
               </div>
             </motion.div>

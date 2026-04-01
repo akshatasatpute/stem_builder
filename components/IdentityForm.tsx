@@ -10,10 +10,15 @@ interface Props {
 }
 
 const IdentityForm: React.FC<Props> = ({ profile, updateProfile, readOnly, validationErrors = {} as Record<string, string> }) => {
+  const [firstNameTouched, setFirstNameTouched] = React.useState(false);
+  const [lastNameTouched, setLastNameTouched] = React.useState(false);
   const fullName = (profile.fullName || '').trim();
   const nameParts = fullName ? fullName.split(/\s+/) : [];
   const firstName = nameParts[0] || '';
   const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+  const fullNameInvalid = !!validationErrors.fullName;
+  const showFirstNameError = fullNameInvalid && (!firstName || firstNameTouched);
+  const showLastNameError = fullNameInvalid && (!lastName || lastNameTouched);
 
   const updateName = (nextFirst: string, nextLast: string) => {
     updateProfile({ fullName: `${nextFirst} ${nextLast}`.trim() });
@@ -29,10 +34,12 @@ const IdentityForm: React.FC<Props> = ({ profile, updateProfile, readOnly, valid
               type="text"
               value={firstName}
               onChange={(e) => updateName(e.target.value, lastName)}
+              onBlur={() => setFirstNameTouched(true)}
               placeholder="e.g. Ananya"
               disabled={readOnly}
               className={`w-full px-4 py-3 rounded-xl border ${validationErrors.fullName ? 'border-red-500 ring-2 ring-red-100' : 'border-slate-200 focus:ring-2 focus:ring-[#f58434]'} focus:border-transparent outline-none transition-all disabled:bg-slate-50 font-medium`}
             />
+            {showFirstNameError && <p className="text-red-500 text-xs mt-1">This field is required</p>}
           </div>
           <div>
             <label className="block text-sm font-bold text-[#2c4869] mb-2 tracking-tight">Last Name <span className="text-red-500 ml-1">*</span></label>
@@ -40,13 +47,14 @@ const IdentityForm: React.FC<Props> = ({ profile, updateProfile, readOnly, valid
               type="text"
               value={lastName}
               onChange={(e) => updateName(firstName, e.target.value)}
+              onBlur={() => setLastNameTouched(true)}
               placeholder="e.g. Iyer"
               disabled={readOnly}
               className={`w-full px-4 py-3 rounded-xl border ${validationErrors.fullName ? 'border-red-500 ring-2 ring-red-100' : 'border-slate-200 focus:ring-2 focus:ring-[#f58434]'} focus:border-transparent outline-none transition-all disabled:bg-slate-50 font-medium`}
             />
+            {showLastNameError && <p className="text-red-500 text-xs mt-1">This field is required</p>}
           </div>
         </div>
-        {validationErrors.fullName && <p className="-mt-4 text-red-500 text-xs">{validationErrors.fullName}</p>}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {(!readOnly || profile.gender) && (
