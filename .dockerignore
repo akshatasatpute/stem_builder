@@ -1,11 +1,12 @@
+# Build context: keep image small and avoid leaking secrets
 node_modules
 dist
 .git
-.gitignore
-*.md
 .env
 .env.*
 !.env.example
+.gitignore
+*.md
 Dockerfile*
 docker-compose*.yml
 .dockerignore
