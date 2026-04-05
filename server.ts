@@ -13,8 +13,8 @@ import { appendProfileToGoogleSheet } from './googleSheets';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key-for-dev';
 
-// Initialize SQLite DB
-const db = new Database('app.db');
+// Initialize SQLite DB (SQLITE_PATH for Docker / persistent volumes)
+const db = new Database(process.env.SQLITE_PATH || 'app.db');
 
 // Create users table
 db.exec(`

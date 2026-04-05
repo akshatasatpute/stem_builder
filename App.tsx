@@ -13,13 +13,13 @@ import SectionSummary from './components/SectionSummary';
 import EmojiBurst from './components/EmojiBurst';
 import ChatSettings from './components/ChatSettings';
 import { Auth } from './components/Auth';
-import AvatarProgress from './components/AvatarProgress';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
 
 const VIGYAN_SHAALA_LOGO = '/log.png';
 const STORAGE_KEY = 'vs_reflection_profile';
 const CHAT_PREFS_KEY = 'vs_chat_preferences';
+const STRICT_EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@(gmail\.com|yahoo\.com|outlook\.com)$/i;
 const LEVEL_1_SECTIONS: Section[] = [Section.BASIC, Section.ACADEMIC, Section.SKILLS, Section.MILESTONES];
 const LEVEL_2_SECTIONS: Section[] = [Section.REFLECTIONS, Section.REVIEW];
 const JOURNEY_STEPS: Section[] = [Section.BASIC, Section.ACADEMIC, Section.SKILLS, Section.MILESTONES, Section.REFLECTIONS];
@@ -103,15 +103,12 @@ const App: React.FC = () => {
   const [successToast, setSuccessToast] = useState<{ message: string; section: Section } | null>(null);
   const [editingSection, setEditingSection] = useState<Section | null>(Section.BASIC);
   const [draftProfile, setDraftProfile] = useState<Profile | null>(null);
-  const [selectedLevelCard, setSelectedLevelCard] = useState<'level1' | 'level2' | null>(null);
-  const [showLevel2Prompt, setShowLevel2Prompt] = useState(false);
-  const [level2PromptHandled, setLevel2PromptHandled] = useState(false);
-  const [level2AccessGranted, setLevel2AccessGranted] = useState(false);
   const [reflectionsFocusPulse, setReflectionsFocusPulse] = useState(false);
   const [journeyMessage, setJourneyMessage] = useState<string | null>(null);
   const [xpMessage, setXpMessage] = useState<string | null>(null);
   const [avatarGrowthToast, setAvatarGrowthToast] = useState<string | null>(null);
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
+  const [resumeSectionEdit, setResumeSectionEdit] = useState<Section | null>(null);
   
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const previousUnlockedCountRef = useRef(1);
@@ -208,6 +205,7 @@ const App: React.FC = () => {
     setDraftProfile(null);
     setEditingSection(null);
     setValidationErrors(null);
+    setResumeSectionEdit(null);
   };
 
   const handleSkip = (section: Section) => {
@@ -259,8 +257,22 @@ const App: React.FC = () => {
     if (!savedSections.includes(section)) {
       setSavedSections(prev => [...prev, section]);
     }
+    setResumeSectionEdit(prev => (prev === section ? null : prev));
     setEditingSection(null);
     setValidationErrors(null);
+    const sectionToastMessages: Record<Section, string> = {
+      [Section.BASIC]: '🎉 Great job! Moving to Academics section…',
+      [Section.ACADEMIC]: '🎉 Awesome! Let’s continue to Expertise…',
+      [Section.SKILLS]: '🎉 Nice progress! Moving to Milestones…',
+      [Section.MILESTONES]: '🎉 Achievement unlocked! Welcome to Reflections…',
+      [Section.REFLECTIONS]: '🎉 Fantastic! Moving to Review…',
+      [Section.REVIEW]: '🎉 Great work! Journey complete…',
+    };
+    setSuccessToast({
+      message: sectionToastMessages[section] || '🎉 Great job! Moving to next section…',
+      section,
+    });
+    setTimeout(() => setSuccessToast(null), 1800);
     if (hasEnoughForMilestone(section, draftProfile)) {
       triggerMilestoneCelebration(section);
     }
@@ -378,12 +390,12 @@ const App: React.FC = () => {
       setVisibleSections(newVisibleSections);
       setEditingSection(firstEmptySection);
       setCurrentSectionIndex(firstEmptySection ? getJourneyIndex(firstEmptySection) : JOURNEY_STEPS.length - 1);
-      setLevel2AccessGranted(isSectionFilled(Section.REFLECTIONS, merged));
+      
     } else {
       // If it's a new profile, make the first section editable
       setEditingSection(Section.BASIC);
       setCurrentSectionIndex(0);
-      setLevel2AccessGranted(false);
+      
     }
     setIsStarted(true);
     window.scrollTo(0, 0);
@@ -395,17 +407,6 @@ const App: React.FC = () => {
     setCurrentBurstEmojis([singleEmoji]);
     setShowMilestoneBurst(true);
     
-    const messages: Record<string, string> = {
-      [Section.BASIC]: "Identity Anchored! ⚓",
-      [Section.ACADEMIC]: "Academic Foundations Set! 🎓",
-      [Section.SKILLS]: "Expertise Core Built! 🚀",
-      [Section.MILESTONES]: "Milestones & Projects Captured! 🏆",
-      [Section.REFLECTIONS]: "Deep Reflections Captured! 🧠",
-      [Section.REVIEW]: "Profile Ready for Curie! 🏁"
-    };
-    
-    setSuccessToast({ message: messages[section] || "Section Completed!", section });
-    
     if (section === Section.REVIEW || completeness === 100) {
       confetti({
         particleCount: 80,
@@ -416,7 +417,6 @@ const App: React.FC = () => {
     }
 
     setTimeout(() => setShowMilestoneBurst(false), 100);
-    setTimeout(() => setSuccessToast(null), 3000);
   };
 
   const getMandatoryMissingFields = (section: Section, prof: Profile = profile): Record<string, string> => {
@@ -424,6 +424,9 @@ const App: React.FC = () => {
     if (section === Section.BASIC) {
       if (!prof.fullName.trim()) missing["fullName"] = "This field is required";
       if (!prof.whatsappNumber?.trim()) missing["whatsappNumber"] = "This field is required";
+      if (!STRICT_EMAIL_REGEX.test((prof.email || '').trim())) {
+        missing["email"] = "Please enter a valid email address (e.g., name@gmail.com)";
+      }
     } else if (section === Section.ACADEMIC) {
       if (!prof.academicStatus) missing["academicStatus"] = "This field is required";
       if (!prof.collegeName.trim()) missing["collegeName"] = "This field is required";
@@ -437,8 +440,16 @@ const App: React.FC = () => {
         prof.professionalSkills.length > 0 ||
         prof.interests.length > 0;
       
-      if (!hasExpertise) {
-        missing["expertise"] = "This field is required";
+      const expertiseFilledCount = [
+        prof.subjectSkills.length > 0,
+        prof.toolSkills.length > 0,
+        prof.aiSkills.length > 0,
+        prof.professionalSkills.length > 0,
+        prof.interests.length > 0,
+      ].filter(Boolean).length;
+
+      if (expertiseFilledCount < 2) {
+        missing["expertise"] = "Fill at least any two questions out of five to proceed to the next section.";
       }
     } else if (section === Section.MILESTONES) {
       const hasMilestones = 
@@ -463,10 +474,7 @@ const App: React.FC = () => {
         if (cert.name.trim() && !cert.status) missing[`certificationStatus_${index}`] = "This field is required";
       });
     } else if (section === Section.REFLECTIONS) {
-      const hasAnyReflection = (Object.values(prof.reflections) as string[]).some((v) => !!v && v.trim().length > 0);
-      if (!hasAnyReflection) {
-        missing["reflections"] = "Please fill all required fields marked with *";
-      }
+      // Reflections are intentionally flexible and non-mandatory.
     }
     return missing;
   };
@@ -476,7 +484,9 @@ const App: React.FC = () => {
     if (section === Section.BASIC) {
       if (!profile.fullName.trim()) missing["fullName"] = "Full Name is required";
       if (!profile.whatsappNumber?.trim()) missing["whatsappNumber"] = "WhatsApp Number is required";
-      if (!profile.email.trim()) missing["email"] = "Email address is required";
+      if (!STRICT_EMAIL_REGEX.test((profile.email || '').trim())) {
+        missing["email"] = "Please enter a valid email address (e.g., name@gmail.com)";
+      }
       if (!profile.location.trim()) missing["location"] = "Current location is required";
     } else if (section === Section.ACADEMIC) {
       if (!profile.collegeName.trim()) missing["collegeName"] = "Institution is required";
@@ -488,11 +498,16 @@ const App: React.FC = () => {
       if (!profile.specializationCategory) missing["specializationCategory"] = "Specialization Category is required";
       if (!profile.specialization) missing["specialization"] = "Specialization is required";
     } else if (section === Section.SKILLS) {
-      if (profile.subjectSkills.length === 0) missing["subjectSkills"] = "Subject Expertise is required";
-      if (profile.toolSkills.length === 0) missing["toolSkills"] = "Technical Tools are required";
-      if (profile.aiSkills.length === 0) missing["aiSkills"] = "AI & Data Skills are required";
-      if (profile.professionalSkills.length === 0) missing["professionalSkills"] = "Professional Skills are required";
-      if (profile.interests.length === 0) missing["interests"] = "Academic Interests are required";
+      const expertiseFilledCount = [
+        profile.subjectSkills.length > 0,
+        profile.toolSkills.length > 0,
+        profile.aiSkills.length > 0,
+        profile.professionalSkills.length > 0,
+        profile.interests.length > 0,
+      ].filter(Boolean).length;
+      if (expertiseFilledCount < 2) {
+        missing["expertise"] = "Fill at least any two questions out of five to proceed to the next section.";
+      }
     } else if (section === Section.MILESTONES) {
       const hasMilestones = 
         profile.projects.length > 0 || 
@@ -518,13 +533,7 @@ const App: React.FC = () => {
         if (cert.name.trim() && !cert.status) missing[`certificationStatus_${index}`] = `Status for ${cert.name} is required`;
       });
     } else if (section === Section.REFLECTIONS) {
-      if (!profile.reflections.impactPurpose.trim()) missing["impactPurpose"] = "Impact & Purpose is required";
-      if (!profile.reflections.strengths.trim()) missing["strengths"] = "Strengths is required";
-      if (!profile.reflections.curiosity.trim()) missing["curiosity"] = "Curiosity is required";
-      if (!profile.reflections.grittyGrowth.trim()) missing["grittyGrowth"] = "Gritty Growth is required";
-      if (!profile.reflections.spark.trim()) missing["spark"] = "Spark is required";
-      if (!profile.reflections.opportunities.trim()) missing["opportunities"] = "Opportunities is required";
-      if (!profile.reflections.threats.trim()) missing["threats"] = "Threats is required";
+      // Reflections are intentionally flexible and non-mandatory.
     }
     return missing;
   };
@@ -732,6 +741,38 @@ const App: React.FC = () => {
   const level1Progress = getMandatoryProgressForSections(LEVEL_1_SECTIONS);
   const level2Progress = getMandatoryProgressForSections(LEVEL_2_SECTIONS);
   const level1Complete = level1Progress.percent === 100;
+  const goToPreviousJourneySection = (fromSection: Section) => {
+    const idx = JOURNEY_STEPS.indexOf(fromSection);
+    if (idx <= 0) return;
+    const prev = JOURNEY_STEPS[idx - 1];
+    if (prev === Section.REFLECTIONS && !level1Complete) {
+      setSkipMessage('Please complete all required Level 1 sections to unlock Reflections.');
+      setTimeout(() => setSkipMessage(null), 3200);
+      return;
+    }
+    if (!visibleSections.includes(prev)) {
+      setVisibleSections(v => [...v, prev]);
+    }
+    setResumeSectionEdit(null);
+    setEditingSection(prev);
+    setValidationErrors(null);
+  };
+  const goToNextJourneySection = (fromSection: Section) => {
+    const idx = JOURNEY_STEPS.indexOf(fromSection);
+    if (idx < 0 || idx >= JOURNEY_STEPS.length - 1) return;
+    const next = JOURNEY_STEPS[idx + 1];
+    if (next === Section.REFLECTIONS && !level1Complete) {
+      setSkipMessage('Please complete all required Level 1 sections to unlock Reflections.');
+      setTimeout(() => setSkipMessage(null), 3200);
+      return;
+    }
+    if (!visibleSections.includes(next)) {
+      setVisibleSections(v => [...v, next]);
+    }
+    setResumeSectionEdit(null);
+    setEditingSection(next);
+    setValidationErrors(null);
+  };
   const identityComplete = Object.keys(getMandatoryMissingFields(Section.BASIC)).length === 0;
   const academicsComplete = Object.keys(getMandatoryMissingFields(Section.ACADEMIC)).length === 0;
   const expertiseComplete = Object.keys(getMandatoryMissingFields(Section.SKILLS)).length === 0;
@@ -773,12 +814,6 @@ const App: React.FC = () => {
   const overallJourneyProgress = Math.round((completedCount / JOURNEY_STEPS.length) * 100);
 
   useEffect(() => {
-    if (level1Complete && !level2PromptHandled) {
-      setShowLevel2Prompt(true);
-    }
-  }, [level1Complete, level2PromptHandled]);
-
-  useEffect(() => {
     if (unlockedCount > previousUnlockedCountRef.current && unlockedCount <= JOURNEY_STEPS.length) {
       const justUnlocked = JOURNEY_STEPS[unlockedCount - 1];
       const unlockedName =
@@ -805,41 +840,7 @@ const App: React.FC = () => {
     previousAvatarStageRef.current = avatarStage;
   }, [avatarStage, currentAvatarMeta.title]);
 
-  const handleProceedToLevel2 = () => {
-    setVisibleSections((prev) => {
-      const next = [...prev];
-      LEVEL_2_SECTIONS.forEach((sec) => {
-        if (!next.includes(sec)) next.push(sec);
-      });
-      return next;
-    });
-    setEditingSection(Section.REFLECTIONS);
-    setCurrentSectionIndex(Math.max(currentSectionIndex, JOURNEY_STEPS.indexOf(Section.REFLECTIONS)));
-    setLevel2AccessGranted(true);
-    setShowLevel2Prompt(false);
-    setLevel2PromptHandled(true);
-    setReflectionsFocusPulse(true);
-    setTimeout(() => setReflectionsFocusPulse(false), 1800);
-    setTimeout(() => {
-      sectionRefs.current[Section.REFLECTIONS]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 100);
-  };
-
-  const handleSkipLevel2Prompt = () => {
-    setShowLevel2Prompt(false);
-    setLevel2PromptHandled(true);
-    setLevel2AccessGranted(false);
-    setVisibleSections((prev) => {
-      const next = [...prev];
-      if (!next.includes(Section.REVIEW)) next.push(Section.REVIEW);
-      return next;
-    });
-    setEditingSection(Section.REVIEW);
-    setCurrentSectionIndex(JOURNEY_STEPS.length - 1);
-    setTimeout(() => {
-      sectionRefs.current[Section.REVIEW]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 100);
-  };
+  // Removed modal-based Level 2 prompt flow. Progress now transitions directly with celebratory toasts.
 
   const completeSection = (section: Section, forceSkip: boolean = false) => {
     if (!forceSkip) {
@@ -931,7 +932,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#fcfcfc] flex flex-col pb-32">
+    <div className="min-h-screen bg-[#9DD3AF] flex flex-col pb-32 overflow-x-hidden">
       <EmojiBurst trigger={showMilestoneBurst} emojis={currentBurstEmojis} />
       
       <AnimatePresence>
@@ -948,7 +949,7 @@ const App: React.FC = () => {
                 👏
               </div>
               <div className="flex flex-col">
-                <span className="text-[10px] font-black uppercase tracking-widest opacity-60 leading-none mb-1">Milestone Reached</span>
+                <span className="text-[10px] font-black uppercase tracking-widest opacity-60 leading-none mb-1">Section Update</span>
                 <span className="text-sm font-black tracking-tight">{successToast.message}</span>
               </div>
             </div>
@@ -972,17 +973,15 @@ const App: React.FC = () => {
         )}
       </AnimatePresence>
       
-      <div className="bg-white/40 backdrop-blur-md py-2.5 border-b border-slate-200/50 z-30 sticky top-0">
-        <div className="max-w-5xl mx-auto px-6 grid grid-cols-[auto_1fr_auto] items-center gap-3">
-          <img 
-            src={VIGYAN_SHAALA_LOGO} 
-            alt="VigyanShaala Logo" 
-            className="h-9 sm:h-10 object-contain shrink-0"
+      <header className="sticky top-0 z-30 bg-[#9DD3AF] border-b border-[#2c4869]/15 shadow-sm">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+          <img
+            src={VIGYAN_SHAALA_LOGO}
+            alt="VigyanShaala"
+            className="h-7 sm:h-8 w-auto object-contain"
           />
-          <h1 className="text-center text-2xl sm:text-3xl md:text-4xl font-black tracking-[0.08em] text-[#2c4869] leading-none">
-            STEM Growth Builder
-          </h1>
           <button
+            type="button"
             onClick={async () => {
               await fetch('/api/auth/logout', { method: 'POST' });
               setIsAuthenticated(false);
@@ -991,129 +990,10 @@ const App: React.FC = () => {
               setProfile(INITIAL_PROFILE);
               localStorage.removeItem(STORAGE_KEY);
             }}
-            className="px-4 py-2 rounded-xl bg-[#2c4869] text-white text-[10px] font-black uppercase tracking-wider shadow-sm hover:bg-[#2c4869]/90 transition-all whitespace-nowrap"
+            className="shrink-0 px-3 sm:px-4 py-2 rounded-full bg-[#2c4869] text-white text-[10px] font-bold uppercase tracking-wider hover:bg-[#2c4869]/90 transition-colors"
           >
-            Sign Out
+            Sign out
           </button>
-        </div>
-      </div>
-
-      <header className="sticky top-[38px] z-20 bg-white/80 backdrop-blur-md border-b border-slate-200 flex flex-col shadow-sm">
-        <div className="px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div className="flex flex-col gap-1">
-            {profile.lastUpdatedAt && (
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1">
-                <div className="flex items-center gap-2 text-[9px] font-black text-[#2c4869]/40 uppercase tracking-widest">
-                  <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-pulse"></span>
-                  Draft Saved: {new Date(profile.lastUpdatedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                </div>
-                {profile.lastSyncedAt && (
-                  <div className="flex items-center gap-2 text-[9px] font-black text-emerald-500 uppercase tracking-widest">
-                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
-                    Sent to Curie: {new Date(profile.lastSyncedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-          
-          <div className="flex items-start gap-3 flex-1 justify-end w-full" />
-        </div>
-        
-        <div className="w-full border-t border-slate-200/50 bg-slate-50/50 px-6 py-2.5 overflow-x-auto no-scrollbar">
-          <div className="max-w-5xl mx-auto w-full space-y-2.5">
-            <div className="max-w-4xl mx-auto rounded-2xl border border-slate-200 bg-white/90 shadow-sm px-3 py-2">
-              <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-center">
-                <div className="w-full min-w-0">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-[#2c4869]/60">Overall Progress</p>
-                    <p className="text-[12px] font-black text-emerald-700">{requiredProgress.percent}% Complete</p>
-                  </div>
-                  <div className="h-2.5 w-full bg-white border border-slate-200 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-emerald-500 transition-all duration-700 ease-in-out"
-                      style={{ width: `${requiredProgress.percent}%` }}
-                    />
-                  </div>
-                </div>
-                <div className="md:ml-2 flex justify-center md:justify-end">
-                  <motion.div
-                    key={`top-avatar-${avatarStage}`}
-                    initial={{ opacity: 0.6, scale: 0.94 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ duration: 0.4, ease: 'easeOut' }}
-                  >
-                    <AvatarProgress
-                      progress={overallJourneyProgress}
-                      xpMessage={xpMessage}
-                      small
-                      avatarEmoji={currentAvatarMeta.emoji}
-                      stageLabel={currentAvatarMeta.title}
-                      stageSubtitle={currentAvatarMeta.subtitle}
-                      activeState={avatarStage >= 5 ? 'completed' : avatarStage >= 3 ? 'active' : 'incomplete'}
-                    />
-                  </motion.div>
-                </div>
-              </div>
-            </div>
-            <div className="max-w-4xl mx-auto flex items-center gap-1.5 w-full justify-between">
-            {JOURNEY_STEPS.map((sec, idx) => {
-              const isCompleted = completedMap[sec];
-              const isActive = editingSection === sec;
-              const isUnlocked = idx <= currentSectionIndex;
-              const isReflectionLocked = sec === Section.REFLECTIONS && !level1Complete;
-              const isLocked = !isUnlocked || isReflectionLocked;
-              const label =
-                sec === Section.BASIC
-                  ? 'IDENTITY'
-                  : sec === Section.ACADEMIC
-                  ? 'ACADEMICS'
-                  : sec === Section.SKILLS
-                  ? 'EXPERTISE'
-                  : sec === Section.MILESTONES
-                  ? 'MILESTONES'
-                  : 'REFLECTIONS';
-
-              return (
-                <React.Fragment key={sec}>
-                  <button
-                    type="button"
-                    disabled={isLocked}
-                    onClick={() => {
-                      if (isReflectionLocked) {
-                        setSkipMessage('Please complete all required Level 1 sections to unlock Reflections.');
-                        setTimeout(() => setSkipMessage(null), 3200);
-                        return;
-                      }
-                      setEditingSection(sec);
-                      sectionRefs.current[sec]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }}
-                    className={`whitespace-nowrap px-3 py-1.5 rounded-full text-[10px] font-black tracking-wider transition-all border ${
-                      isCompleted
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                        : isActive
-                        ? 'bg-blue-50 text-blue-700 border-blue-300 shadow-sm'
-                        : isLocked
-                        ? 'bg-white text-slate-300 border-slate-200 cursor-not-allowed'
-                        : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    {isCompleted ? `✅ ${label}` : isLocked ? `🔒 ${label}` : label}
-                  </button>
-                  {idx < JOURNEY_STEPS.length - 1 && (
-                    <div className="w-5 h-[3px] rounded-full overflow-hidden bg-white border border-slate-200">
-                      <div
-                        className={`h-full transition-all duration-700 ease-in-out ${
-                          completedMap[sec] ? 'w-full bg-emerald-500' : 'w-0 bg-emerald-500'
-                        }`}
-                      />
-                    </div>
-                  )}
-                </React.Fragment>
-              );
-            })}
-            </div>
-          </div>
         </div>
       </header>
 
@@ -1145,67 +1025,9 @@ const App: React.FC = () => {
         )}
       </AnimatePresence>
 
-      <main className="flex-1 w-full max-w-5xl mx-auto px-6 pt-8">
+      <main className="flex-1 w-full px-6 pt-8 overflow-x-hidden">
         <div className="grid grid-cols-1 gap-6 items-stretch">
-        <div className="space-y-12 max-w-4xl mx-auto w-full">
-        <section className="space-y-4 bg-white border border-slate-200 rounded-3xl p-6 shadow-md transition-all duration-300">
-          <p className="text-xs font-bold text-[#2c4869]/60">You're building your STEM journey!</p>
-          {journeyMessage && (
-            <motion.p
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-sm font-bold text-[#2c4869]"
-            >
-              {journeyMessage}
-            </motion.p>
-          )}
-          <p className={`text-[13px] font-bold text-center transition-colors duration-300 ${selectedLevelCard ? 'text-[#2c4869]' : 'text-[#f58434] animate-pulse'}`}>
-            {selectedLevelCard ? 'Great! Continue building your profile below' : 'Click on the cards below to begin your journey'}
-          </p>
-          <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <button
-              onClick={() => {
-                setSelectedLevelCard('level1');
-                setVisibleSections((prev) => (prev.includes(Section.BASIC) ? prev : [Section.BASIC, ...prev]));
-                setEditingSection(Section.BASIC);
-                sectionRefs.current[Section.BASIC]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }}
-              className={`text-left rounded-2xl border p-4 shadow-sm hover:shadow-md hover:scale-[1.01] transition-all cursor-pointer ${
-                selectedLevelCard === 'level1'
-                  ? 'bg-[#f58434] border-[#f58434] text-white shadow-md'
-                  : 'bg-white border-slate-200 text-[#2c4869] hover:border-[#f58434]/30'
-              }`}
-            >
-              <p className={`text-xs font-black uppercase tracking-widest ${selectedLevelCard === 'level1' ? 'text-white' : 'text-[#2c4869]'}`}>🟢 Foundation Mode</p>
-              <p className={`text-sm font-medium leading-relaxed ${selectedLevelCard === 'level1' ? 'text-white/90' : 'text-[#2c4869]/70'}`}>
-                Complete your foundational profile to unlock personalized guidance.
-              </p>
-            </button>
-            <button
-              onClick={() => {
-                setSelectedLevelCard('level2');
-                if (!level1Complete) {
-                  setSkipMessage('Please complete all required Level 1 sections to unlock Reflections.');
-                  setTimeout(() => setSkipMessage(null), 3000);
-                  return;
-                }
-                handleProceedToLevel2();
-              }}
-              className={`text-left rounded-2xl border p-4 shadow-sm hover:shadow-md hover:scale-[1.01] transition-all cursor-pointer ${
-                selectedLevelCard === 'level2'
-                  ? 'bg-[#f58434] border-[#f58434] text-white shadow-md'
-                  : (level1Complete ? 'bg-white border-slate-200 text-[#2c4869] hover:border-[#f58434]/30' : 'border-slate-200 bg-slate-100/70')
-              }`}
-            >
-              <p className={`text-xs font-black uppercase tracking-widest ${selectedLevelCard === 'level2' ? 'text-white' : 'text-[#2c4869]'}`}>🔵 Power-Up Mode</p>
-              <p className={`text-sm font-medium leading-relaxed ${selectedLevelCard === 'level2' ? 'text-white/90' : 'text-[#2c4869]/70'}`}>
-                Unlocked after baseline, providing tailored mentorship and insights.
-              </p>
-            </button>
-          </div>
-        </section>
-
-        {selectedLevelCard && (
+        <div className="space-y-12 w-full">
         <AnimatePresence mode="popLayout">
           {[
             { key: 'level1', title: '🟢 Foundation Mode', sections: LEVEL_1_SECTIONS, progress: level1Progress, locked: false },
@@ -1218,101 +1040,77 @@ const App: React.FC = () => {
                   const stepIndex = JOURNEY_STEPS.indexOf(section);
                   if (stepIndex >= 0 && stepIndex >= unlockedCount) return null;
                 }
-                if (section === Section.REFLECTIONS && !level2AccessGranted) return null;
-                const sectionProfile = draftProfile || profile;
-                const hasMandatoryMissing = Object.keys(getMandatoryMissingFields(section, sectionProfile)).length > 0;
-                const lockIdentityActions = section === Section.BASIC && hasMandatoryMissing;
+                
+                if (editingSection !== section) return null;
+                const showSummaryCard =
+                  section !== Section.REVIEW &&
+                  savedSections.includes(section) &&
+                  isSectionFilled(section, profile) &&
+                  resumeSectionEdit !== section;
                 return (
                   <motion.div 
                     key={section}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5, ease: "easeOut" }}
+                    initial={{ opacity: 0, x: 32 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -24 }}
+                    transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
                     ref={el => sectionRefs.current[section] = el}
-                    className={`scroll-mt-48 transition-all duration-700 ${
+                    className={`scroll-mt-36 transition-all duration-700 w-full ${
                       section === Section.REFLECTIONS && reflectionsFocusPulse
                         ? 'ring-2 ring-emerald-300 rounded-2xl shadow-[0_0_22px_rgba(16,185,129,0.22)]'
                         : ''
                     }`}
                   >
-              <div className="mb-8">
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#2c4869] text-white text-[10px] font-black">
-                    {index + 1}
-                  </span>
-                  <h2 className="text-2xl font-black text-[#2c4869]">
-                    {section === Section.BASIC && "Let's start with the basics"}
-                    {section === Section.ACADEMIC && "Your Academic Path"}
-                    {section === Section.SKILLS && "Skills & Expertise"}
-                    {section === Section.MILESTONES && "Achievements & Milestones"}
-                    {section === Section.REFLECTIONS && "Your STEM Mindset"}
-                    {section === Section.REVIEW && "Review Your Profile"}
-                  </h2>
-                  {section !== Section.REVIEW && Object.keys(validateSection(section)).length === 0 && (
-                    <motion.div 
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100"
-                    >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-                      </svg>
-                      <span className="text-[9px] font-black uppercase tracking-wider">Completed</span>
-                    </motion.div>
-                  )}
-                  {section !== Section.REVIEW && savedSections.includes(section) && Object.keys(validateSection(section)).length > 0 && (
-                    <motion.div 
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100"
-                    >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                      </svg>
-                      <span className="text-[9px] font-black uppercase tracking-wider">Incomplete</span>
-                    </motion.div>
-                  )}
-                </div>
-                {!(savedSections.includes(section) && editingSection !== section && isSectionFilled(section)) && (
-                  <div className="text-[#2c4869]/60 font-medium">
-                    {section === Section.BASIC && "Tell us who you are and how you’d like to be recognized in the STEM community."}
-                    {section === Section.ACADEMIC && "Where are you currently learning? Tell us about your academic path and the subjects you’re diving into."}
-                    {section === Section.SKILLS && (
-                      <div className="space-y-1">
-                        <p>What are you learning to do? From the tools you're just picking up to the skills you're mastering, every piece of your expertise helps Curie guide you.</p>
-                        <p className="text-xs opacity-80 italic">You are required to fill at least one of the above fields to proceed.</p>
-                        <p className="text-xs opacity-80 italic">Why this matters: This foundational info helps Curie address you correctly and understand your context.</p>
-                      </div>
-                    )}
-                    {section === Section.MILESTONES && (
-                      <div className="space-y-1">
-                        <p>Add important steps in your learning journey — projects you have built, certifications you are pursuing, or exams that are part of your progress.</p>
-                      </div>
-                    )}
-                    {section === Section.REFLECTIONS && "Your reflections help us understand who you are as a learner: what drives you, what you're good at, what you're curious about, and where you may need support in your STEM journey. There are no right or wrong answers."}
-                    {section === Section.REFLECTIONS && (
-                      <p className="text-xs opacity-80 italic mt-1">
-                        You may fill any one of the below fields to proceed. Completing all is optional but recommended for better insights.
-                      </p>
-                    )}
-                    {section === Section.REVIEW && "Check your answers before sending your data to Curie for personalized guidance."}
-                  </div>
-                )}
-              </div>
-
-              <div className="transition-all duration-300">
-                {savedSections.includes(section) && editingSection !== section && isSectionFilled(section) && section !== Section.REVIEW ? (
-                  <SectionSummary 
-                    section={section} 
-                    profile={profile} 
-                    onEdit={() => setEditingSection(section)} 
+              <div
+                className={`transition-all duration-300 rounded-2xl sm:rounded-3xl shadow-sm px-4 py-6 sm:px-8 sm:py-10 ${
+                  section === Section.REVIEW
+                    ? 'border border-slate-100 bg-white/80'
+                    : 'border border-[#2c4869]/15 bg-[#9DD3AF]'
+                }`}
+              >
+                {section === Section.REVIEW ? (
+                  <ReviewPage
+                    profile={profile}
+                    completeness={completeness}
+                    chatPreferences={chatPreferences}
+                    setChatPreferences={setChatPreferences}
+                    updateProfile={updateProfile}
+                    setCurrentSection={(s) => {
+                      setResumeSectionEdit(null);
+                      setEditingSection(s);
+                      setValidationErrors(null);
+                      sectionRefs.current[s]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}
                   />
+                ) : showSummaryCard ? (
+                  <>
+                    <SectionSummary
+                      section={section}
+                      profile={profile}
+                      onEdit={() => setResumeSectionEdit(section)}
+                    />
+                    <div className="mt-6 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => goToNextJourneySection(section)}
+                        className="px-5 py-2.5 rounded-full bg-[#2c4869] text-white text-xs font-bold uppercase tracking-wider hover:bg-[#2c4869]/90 transition-colors"
+                      >
+                        Go to Next Section
+                      </button>
+                    </div>
+                  </>
                 ) : (
                   <>
                     {section === Section.BASIC && (
                       <IdentityForm
+                        typeform
+                        typeformResumeEdit={resumeSectionEdit === Section.BASIC}
                         profile={draftProfile || profile}
                         updateProfile={updateDraftProfile}
+                        onCompleteSection={() => {
+                          setResumeSectionEdit(null);
+                          handleSave(Section.BASIC);
+                        }}
                         validationErrors={{
                           ...(validationErrors?.section === Section.BASIC ? validationErrors.fields : {}),
                           ...getMandatoryMissingFields(Section.BASIC, draftProfile || profile),
@@ -1320,86 +1118,145 @@ const App: React.FC = () => {
                       />
                     )}
                     {section === Section.ACADEMIC && (
-                      <AcademicForm profile={draftProfile || profile} updateProfile={updateDraftProfile} validationErrors={validationErrors?.section === Section.ACADEMIC ? validationErrors.fields : {}} />
+                      <AcademicForm
+                        typeform
+                        typeformResumeEdit={resumeSectionEdit === Section.ACADEMIC}
+                        profile={draftProfile || profile}
+                        updateProfile={updateDraftProfile}
+                        validationErrors={validationErrors?.section === Section.ACADEMIC ? validationErrors.fields : {}}
+                        onCompleteSection={() => {
+                          setResumeSectionEdit(null);
+                          handleSave(Section.ACADEMIC);
+                        }}
+                        onBackFromFirst={() => goToPreviousJourneySection(Section.ACADEMIC)}
+                      />
                     )}
                     {section === Section.SKILLS && (
-                      <ExpertiseForm profile={draftProfile || profile} updateProfile={updateDraftProfile} validationErrors={validationErrors?.section === Section.SKILLS ? validationErrors.fields : {}} />
+                      <ExpertiseForm
+                        typeform
+                        profile={draftProfile || profile}
+                        updateProfile={updateDraftProfile}
+                        validationErrors={validationErrors?.section === Section.SKILLS ? validationErrors.fields : {}}
+                        onCompleteSection={() => {
+                          setResumeSectionEdit(null);
+                          handleSave(Section.SKILLS);
+                        }}
+                        onBackFromFirst={() => goToPreviousJourneySection(Section.SKILLS)}
+                      />
                     )}
                     {section === Section.MILESTONES && (
-                      <MilestoneForm profile={draftProfile || profile} updateProfile={updateDraftProfile} validationErrors={validationErrors?.section === Section.MILESTONES ? validationErrors.fields : {}} />
+                      <MilestoneForm
+                        typeform
+                        typeformResumeEdit={resumeSectionEdit === Section.MILESTONES}
+                        profile={draftProfile || profile}
+                        updateProfile={updateDraftProfile}
+                        validationErrors={validationErrors?.section === Section.MILESTONES ? validationErrors.fields : {}}
+                        onCompleteSection={() => {
+                          setResumeSectionEdit(null);
+                          handleSave(Section.MILESTONES);
+                        }}
+                        onBackFromFirst={() => goToPreviousJourneySection(Section.MILESTONES)}
+                      />
                     )}
                     {section === Section.REFLECTIONS && (
-                      <ReflectionForm profile={draftProfile || profile} updateProfile={updateDraftProfile} validationErrors={validationErrors?.section === Section.REFLECTIONS ? validationErrors.fields : {}} />
-                    )}
-                    
-                    {section !== Section.REVIEW && (
-                      <div className="flex items-center justify-center gap-4 mt-8">
-                        <button 
-                          onClick={handleCancel}
-                          disabled={lockIdentityActions}
-                          className={`px-6 py-2.5 rounded-xl font-black transition-all ${
-                            lockIdentityActions ? 'text-slate-300 cursor-not-allowed' : 'text-slate-500 hover:text-slate-700'
-                          }`}
-                        >
-                          Cancel
-                        </button>
-                        <button 
-                          onClick={() => handleSave(section)}
-                          disabled={hasMandatoryMissing}
-                          className={`px-6 py-2.5 rounded-xl font-black transition-all ${
-                            hasMandatoryMissing
-                              ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
-                              : 'bg-[#2c4869] text-white shadow-lg hover:shadow-xl'
-                          }`}
-                        >
-                          Save Changes
-                        </button>
-                      </div>
+                      <ReflectionForm
+                        typeform
+                        profile={draftProfile || profile}
+                        updateProfile={updateDraftProfile}
+                        validationErrors={validationErrors?.section === Section.REFLECTIONS ? validationErrors.fields : {}}
+                        onCompleteSection={() => {
+                          setResumeSectionEdit(null);
+                          handleSave(Section.REFLECTIONS);
+                        }}
+                        onBackFromFirst={() => goToPreviousJourneySection(Section.REFLECTIONS)}
+                      />
                     )}
                   </>
                 )}
-              </div>
-              {section === Section.REVIEW && (
-                <ReviewPage 
-                  profile={profile} 
-                  completeness={completeness}
-                  chatPreferences={chatPreferences}
-                  setChatPreferences={setChatPreferences}
-                  updateProfile={updateProfile}
-                  setCurrentSection={(s) => {
-                    setEditingSection(s);
-                    setValidationErrors(null);
-                    sectionRefs.current[s]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }} 
-                />
-              )}
+                <div className="mt-8">
+                  <p className="text-center text-[11px] font-semibold text-slate-500 mb-2">
+                    {editingSection && JOURNEY_STEPS.includes(editingSection)
+                      ? `Step ${JOURNEY_STEPS.indexOf(editingSection) + 1} of ${JOURNEY_STEPS.length}`
+                      : 'Your journey'}
+                  </p>
+                  <div className="flex items-center gap-1 w-full min-w-max justify-center sm:justify-between overflow-x-auto no-scrollbar">
+                    {JOURNEY_STEPS.map((sec, idx) => {
+                      const isCompleted = completedMap[sec];
+                      const isActive = editingSection === sec;
+                      const isUnlocked = idx <= currentSectionIndex;
+                      const isReflectionLocked = sec === Section.REFLECTIONS && !level1Complete;
+                      const isLocked = !isUnlocked || isReflectionLocked;
+                      const label =
+                        sec === Section.BASIC
+                          ? 'IDENTITY'
+                          : sec === Section.ACADEMIC
+                          ? 'ACADEMICS'
+                          : sec === Section.SKILLS
+                          ? 'EXPERTISE'
+                          : sec === Section.MILESTONES
+                          ? 'MILESTONES'
+                          : 'REFLECTIONS';
 
-              {section !== Section.REVIEW && (
-                <div className="mt-12 space-y-6">
-                  {editingSection !== section && (!savedSections.includes(section) || !isSectionFilled(section)) ? (
-                    <>
-                      {validationErrors?.section === section && Object.keys(validationErrors.fields).length > 0 && (
-                        <div className="p-4 bg-red-50 border border-red-100 rounded-xl animate-in fade-in slide-in-from-top-2 duration-300">
-                          <div className="flex items-start gap-3">
-                            <div className="mt-0.5 text-red-500">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                              </svg>
+                      return (
+                        <React.Fragment key={`card-pill-bottom-${sec}`}>
+                          <button
+                            type="button"
+                            disabled={isLocked}
+                            onClick={() => {
+                              if (isReflectionLocked) {
+                                setSkipMessage('Please complete all required Level 1 sections to unlock Reflections.');
+                                setTimeout(() => setSkipMessage(null), 3200);
+                                return;
+                              }
+                              setResumeSectionEdit(null);
+                              setEditingSection(sec);
+                              sectionRefs.current[sec]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }}
+                            className={`whitespace-nowrap px-2.5 py-1 rounded-full text-[9px] sm:text-[10px] font-black tracking-wider transition-all border ${
+                              isCompleted
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                : isActive
+                                ? 'bg-blue-50 text-blue-700 border-blue-300 shadow-sm'
+                                : isLocked
+                                ? 'bg-white text-slate-300 border-slate-200 cursor-not-allowed'
+                                : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {isCompleted ? `✅ ${label}` : isLocked ? `🔒 ${label}` : label}
+                          </button>
+                          {idx < JOURNEY_STEPS.length - 1 && (
+                            <div className="w-5 h-[3px] rounded-full overflow-hidden bg-white border border-slate-200">
+                              <div
+                                className={`h-full transition-all duration-700 ease-in-out ${
+                                  completedMap[sec] ? 'w-full bg-emerald-500' : 'w-0 bg-emerald-500'
+                                }`}
+                              />
                             </div>
-                            <div>
-                              <p className="text-xs font-bold text-red-800 mb-1 uppercase tracking-wider">Please fill all required fields marked with *</p>
-                              <ul className="text-sm text-red-700 leading-relaxed list-disc list-inside">
-                                {Object.values(validationErrors.fields).map((error, i) => (
-                                  <li key={i}>{error}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                      
-                    </>
-                  ) : null}
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {section !== Section.REVIEW && validationErrors?.section === section && Object.keys(validationErrors.fields).length > 0 && (
+                <div className="mt-6 p-4 bg-red-50 border border-red-100 rounded-xl">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 text-red-500">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-red-800 mb-1 uppercase tracking-wider">Please fix the following</p>
+                      <ul className="text-sm text-red-700 leading-relaxed list-disc list-inside">
+                        {Object.values(validationErrors.fields).map((error, i) => (
+                          <li key={i}>{error}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
                 </div>
               )}
               
@@ -1410,42 +1267,11 @@ const App: React.FC = () => {
             </div>
           ))}
         </AnimatePresence>
-        )}
       </div>
       </div>
       </main>
 
-      <AnimatePresence>
-        {showLevel2Prompt && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#2c4869]/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="bg-white rounded-3xl p-7 max-w-md w-full shadow-2xl border border-slate-100"
-            >
-              <h3 className="text-xl font-black text-[#2c4869] tracking-tight">🎉 Congratulations!</h3>
-              <p className="text-sm text-[#2c4869]/70 font-medium mt-2 mb-6">
-                You have successfully completed all required sections in Level 1.
-              </p>
-              <div className="grid grid-cols-1 gap-3">
-                <button
-                  onClick={handleProceedToLevel2}
-                  className="w-full py-3 rounded-xl bg-[#2c4869] text-white font-black uppercase tracking-widest text-xs hover:bg-[#2c4869]/90 transition-all"
-                >
-                  Proceed to Level 2
-                </button>
-                <button
-                  onClick={handleSkipLevel2Prompt}
-                  className="w-full py-3 rounded-xl bg-white border border-slate-200 text-[#2c4869]/70 font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-all"
-                >
-                  Skip for Now
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      
     </div>
   );
 };
