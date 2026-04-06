@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -32,6 +31,7 @@ db.exec(`
 `);
 
 async function startServer() {
+  console.log("Starting server...");
   const app = express();
   const PORT = Number(process.env.PORT || 8505);
 
@@ -151,6 +151,7 @@ async function startServer() {
 
   // --- Vite Middleware ---
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -166,9 +167,12 @@ async function startServer() {
     });
   }
 
+  console.log("About to listen on port", PORT);
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error("FATAL ERROR:", err);
+});
