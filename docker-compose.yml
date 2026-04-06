@@ -5,6 +5,9 @@ services:
     build: .
     expose:
       - "3000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.app.loadbalancer.server.port=3000"
     restart: always
     environment:
       NODE_ENV: production
