@@ -1,32 +1,20 @@
-# --- Build stage: install deps and produce dist/ (Vite + bundled server) ---
-FROM node:20-bookworm-slim AS builder
+FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+# better-sqlite3 compiles on install
+RUN apk add --no-cache python3 make g++
+
+COPY package*.json ./
+# Full install: vite + esbuild (devDependencies) are required for `npm run build`
 RUN npm ci
 
 COPY . .
 RUN npm run build
-
-# --- Run stage: production Node (serves static dist + Express API) ---
-FROM node:20-bookworm-slim
-
-WORKDIR /app
+RUN npm prune --omit=dev && npm cache clean --force
 
 ENV NODE_ENV=production
 ENV PORT=3000
-
-# Production dependencies only (runtime for dist/server.mjs with --packages=external)
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
-
-COPY --from=builder /app/dist ./dist
-
-# Persist SQLite in a volume (see docker-compose.yml)
-RUN mkdir -p /app/data
-
-ENV SQLITE_PATH=/app/data/app.db
 
 EXPOSE 3000
 

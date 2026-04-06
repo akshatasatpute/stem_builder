@@ -1,11 +1,11 @@
-# Elestio: set JWT_SECRET (and any other secrets) in the project environment / UI.
-# Compose loads a root `.env` automatically for ${VAR} substitution only if `.env` exists locally.
-# Do not rely on `env_file: .env` in CI — that file is often absent when `.env` is gitignored.
+version: '3'
 
 services:
   app:
     build: .
-    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    restart: always
     environment:
       NODE_ENV: production
       PORT: "3000"
@@ -13,31 +13,6 @@ services:
       JWT_SECRET: ${JWT_SECRET:-replace-this-with-a-long-random-secret-in-production}
     volumes:
       - sqlite-data:/app/data
-    expose:
-      - "3000"
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "require('http').get('http://127.0.0.1:3000/',(r)=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))",
-        ]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 40s
-
-  nginx:
-    image: nginx:1.27-alpine
-    restart: unless-stopped
-    ports:
-      - "3000:80"
-    volumes:
-      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      app:
-        condition: service_healthy
 
 volumes:
   sqlite-data:
