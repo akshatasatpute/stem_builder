@@ -152,9 +152,11 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(__dirname, '..', 'dist'); // When bundled, it's in dist/server.cjs
+    const distPath = path.join(__dirname, '..', 'dist');
+
     app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
+
+    app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
