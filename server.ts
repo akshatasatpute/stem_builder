@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
@@ -13,8 +14,12 @@ import { appendProfileToGoogleSheet } from './googleSheets';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key-for-dev';
 
-// Initialize SQLite DB (SQLITE_PATH for Docker / persistent volumes)
-const db = new Database(process.env.SQLITE_PATH || 'app.db');
+const dataDir = path.join(process.cwd(), 'data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+const dbPath = process.env.SQLITE_PATH || path.join(process.cwd(), 'data', 'app.db');
+const db = new Database(dbPath);
 
 // Create users table
 db.exec(`
