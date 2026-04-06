@@ -8,7 +8,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.app.rule=Host(`stem-builder-u70983.vm.elestio.app`)"
-      - "traefik.http.routers.app.entrypoints=web"
+      - "traefik.http.routers.app.entrypoints=websecure"
+      - "traefik.http.routers.app.service=app"
       - "traefik.http.services.app.loadbalancer.server.port=3000"
     restart: always
     environment:
